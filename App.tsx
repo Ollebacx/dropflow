@@ -99,7 +99,7 @@ export const IMAGE_FILTER_TYPE_DISPLAY_NAMES: Record<ImageFilterType, string> = 
 };
 
 const DEFAULT_IMAGE_CARD_SIZE = 210;
-const AUTO_SYNC_INTERVAL = 30000; // 30 seconds
+const AUTO_SYNC_INTERVAL = 1000; // 30 seconds
 
 const App: React.FC = () => {
   const [images, setImages] = useState<ImageFile[]>([]);
