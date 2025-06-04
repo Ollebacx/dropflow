@@ -8,6 +8,8 @@ export interface ImageFile {
   fileObject: File; // original file object
   associatedReferenceId?: string | null;
   rating?: number; // 0-5 stars, 0 or undefined for no rating
+  source: 'manual' | 'synced'; // Origin of the file
+  syncedFolderName?: string; // Name of the directory if source is 'synced'
 }
 
 export interface Reference {
