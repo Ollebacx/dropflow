@@ -1,0 +1,6 @@
+
+{
+  "name": "Drop Flow",
+  "description": "Drop Flow: An application to upload images, manage a list of references, and associate images with references. Images are displayed in a grid sorted by modification date, and users can multi-select images to link them to a chosen reference.",
+  "requestFramePermissions": []
+}
