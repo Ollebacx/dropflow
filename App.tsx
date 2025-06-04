@@ -3,8 +3,10 @@ import React, { useState, useCallback, useMemo, DragEvent as ReactDragEvent, use
 import { ImageFile, Reference, SortOrder, ImageFilterType } from './types';
 import ImageGridItem from './components/ImageGridItem';
 import ReferenceItem from './components/ReferenceItem';
+import FilterPanel from './components/FilterPanel'; // New component
 import ShareModal from './components/ShareModal';
-import { LinkIcon, TrashIcon, SortAscIcon, SortDescIcon, XCircleIcon, UploadIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon, ChevronDownIcon, ChevronUpIcon, ArrowUpOnSquareIcon, CloudArrowUpIcon, XMarkIcon, ListBulletIcon, Squares2X2Icon } from './constants';
+import ConfirmationModal from './components/ConfirmationModal';
+import { LinkIcon, TrashIcon, SortAscIcon, SortDescIcon, XCircleIcon, UploadIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon, ChevronDownIcon, ChevronUpIcon, ArrowUpOnSquareIcon, CloudArrowUpIcon, XMarkIcon, ListBulletIcon, Squares2X2Icon, DocumentDuplicateIcon, ArrowPathIcon, StopCircleIcon, StarIconFilled, StarIconOutline, NoSymbolIcon, CheckCircleIcon, AdjustmentsHorizontalIcon } from './constants'; // Added AdjustmentsHorizontalIcon
 
 interface FilteringByReferenceDetail {
   id: string;
@@ -16,70 +18,62 @@ interface NotificationState {
   type: 'success' | 'error';
 }
 
+interface ConfirmationModalConfig {
+  title: string;
+  message: React.ReactNode;
+  onConfirmAction: () => void;
+  confirmButtonText?: string;
+}
+
+// Extend FileSystemDirectoryHandle definition if not fully available in standard TS lib
+interface FileSystemDirectoryHandle {
+  kind: 'directory';
+  name: string;
+  values(): AsyncIterableIterator<FileSystemFileHandle | FileSystemDirectoryHandle>;
+  getFileHandle(name: string, options?: { create?: boolean }): Promise<FileSystemFileHandle>;
+  getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<FileSystemDirectoryHandle>;
+  queryPermission(options?: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission(options?: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+}
+
+interface FileSystemFileHandle {
+  kind: 'file';
+  name: string;
+  getFile(): Promise<File>;
+}
+
+declare global {
+  interface Window {
+    showDirectoryPicker?(options?: { mode?: 'read' | 'readwrite', startIn?: string | FileSystemDirectoryHandle }): Promise<FileSystemDirectoryHandle>;
+  }
+}
+
+
 const dropPhrases = [
-  "Drop it like it's hot!",
-  "Incoming! Brace for files!",
-  "Release the files!",
-  "Let the dropping commence!",
-  "Files, assemble!",
-  "Prepare for data drop!",
-  "Feed me your files!",
-  "Make it rain (files)!",
-  "Drop zone activated!",
-  "Time to drop and load.",
-  "File drop: engage!",
-  "Gimme those pixels (and bits)!",
-  "The drop is mightier than the click.",
-  "Easy does it... now DROP!",
-  "You've got the files, I've got the space.",
-  "Drop it like your Wi-Fi depends on it.",
-  "Drag, drop, and conquer.",
-  "File drop incoming. Look busy!",
-  "This is where the magic happens (with files).",
-  "Show me what you got (files-wise).",
-  "Drop 'em if you got 'em.",
-  "Ready for your file payload?",
-  "All your files are belong to us (temporarily).",
-  "Just drop it.",
-  "The system is ready for your drop.",
-  "File drop mission: accepted.",
-  "Don't be shy, drop those files.",
-  "Uploading... I mean, dropping!",
-  "Get ready for the file party!",
-  "Let's get these files uploaded, drop-style.",
-  "Your files are about to find a new home.",
-  "On the count of three, drop!",
-  "Dropping files like a pro.",
-  "This app eats files for breakfast.",
-  "Caution: Awesome file drop in progress.",
-  "Files incoming! Clear the deck!",
-  "The more files, the merrier the drop.",
-  "File drop success in 3... 2... 1...",
-  "Keep calm and drop files.",
-  "May your drop be swift and your files be many.",
-  "The chosen files for the grand drop!",
-  "It's a bird! It's a plane! No, it's your files!",
-  "Drop it here, we'll take care of the rest.",
-  "Files detected. Prepare for awesomeness.",
-  "The drop zone is hungry for files.",
-  "Let the great file drop begin!",
-  "Your files' journey starts with a drop.",
-  "Unleash the file fury!",
-  "One small drag for man, one giant drop for filekind.",
-  "Drop 'til you can't stop!"
+  "Drop it like it's hot!", "Incoming! Brace for files!", "Release the files!", "Let the dropping commence!", "Files, assemble!",
+  "Prepare for data drop!", "Feed me your files!", "Make it rain (files)!", "Drop zone activated!", "Time to drop and load.",
+  "File drop: engage!", "Gimme those pixels (and bits)!", "The drop is mightier than the click.", "Easy does it... now DROP!",
+  "You've got the files, I've got the space.", "Drop it like your Wi-Fi depends on it.", "Drag, drop, and conquer.",
+  "File drop incoming. Look busy!", "This is where the magic happens (with files).", "Show me what you got (files-wise).",
+  "Drop 'em if you got 'em.", "Ready for your file payload?", "All your files are belong to us (temporarily).", "Just drop it.",
+  "The system is ready for your drop.", "File drop mission: accepted.", "Don't be shy, drop those files.", "Uploading... I mean, dropping!",
+  "Get ready for the file party!", "Let's get these files uploaded, drop-style.", "Your files are about to find a new home.",
+  "On the count of three, drop!", "Dropping files like a pro.", "This app eats files for breakfast.", "Caution: Awesome file drop in progress.",
+  "Files incoming! Clear the deck!", "The more files, the merrier the drop.", "File drop success in 3... 2... 1...",
+  "Keep calm and drop files.", "May your drop be swift and your files be many.", "The chosen files for the grand drop!",
+  "It's a bird! It's a plane! No, it's your files!", "Drop it here, we'll take care of the rest.", "Files detected. Prepare for awesomeness.",
+  "The drop zone is hungry for files.", "Let the great file drop begin!", "Your files' journey starts with a drop.",
+  "Unleash the file fury!", "One small drag for man, one giant drop for filekind.", "Drop 'til you can't stop!"
 ];
 
-// Mock Data for Sessions
-interface MockSession {
+interface Session {
   id: string;
   name: string;
 }
 
-const mockSessions: MockSession[] = [
-  { id: 'session_proj_alpha', name: 'Project Alpha - Phase 1 Keywords' },
-  { id: 'session_client_beta', name: 'Client Beta - Approved Product Names' },
-  { id: 'session_research_gamma', name: 'Research Gamma - Core Concepts' },
-  { id: 'session_marketing_q1', name: 'Marketing Q1 - Campaign Tags' },
+const initialAppSessions: Session[] = [
+  { id: 'session_proj_alpha', name: 'Project Alpha - Phase 1 Keywords' }, { id: 'session_client_beta', name: 'Client Beta - Approved Product Names' },
+  { id: 'session_research_gamma', name: 'Research Gamma - Core Concepts' }, { id: 'session_marketing_q1', name: 'Marketing Q1 - Campaign Tags' },
   { id: 'session_dev_sprint_5', name: 'Dev Sprint 5 - Feature IDs' },
 ];
 
@@ -91,9 +85,23 @@ const mockSessionReferences: Record<string, string[]> = {
   'session_dev_sprint_5': ['FEAT-101', 'FEAT-102-Subtask', 'BUG-205', 'UIUX-007', 'API-042'],
 };
 
+interface SessionDisplayOption {
+  id: string;
+  name: string;
+  isCreateOption?: boolean;
+  originalSessionId?: string;
+}
+
+export const IMAGE_FILTER_TYPE_DISPLAY_NAMES: Record<ImageFilterType, string> = {
+  [ImageFilterType.ALL]: "All",
+  [ImageFilterType.ASSOCIATED]: "Associated",
+  [ImageFilterType.UNASSOCIATED]: "Unassociated",
+};
+
+const DEFAULT_IMAGE_CARD_SIZE = 210;
 
 const App: React.FC = () => {
-  const [images, setImages] = useState<ImageFile[]>([]); // "images" now means generic files
+  const [images, setImages] = useState<ImageFile[]>([]);
   const [references, setReferences] = useState<Reference[]>([]);
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set());
   const [referenceInput, setReferenceInput] = useState<string>('');
@@ -108,20 +116,21 @@ const App: React.FC = () => {
   const [currentDropPhrase, setCurrentDropPhrase] = useState<string>(dropPhrases[0]);
   const dragOverDocumentCounterRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageGalleryScrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const [sessions, setSessions] = useState<Session[]>(initialAppSessions);
   const [sessionSearchTerm, setSessionSearchTerm] = useState<string>('');
   const [isSessionListVisible, setIsSessionListVisible] = useState<boolean>(false);
   const sessionLoadContainerRef = useRef<HTMLDivElement>(null);
   const [loadedSessionNameForShare, setLoadedSessionNameForShare] = useState<string | null>(null);
-
+  const [currentLoadedSessionName, setCurrentLoadedSessionName] = useState<string | null>(null);
 
   const [referenceAddMode, setReferenceAddMode] = useState<'manual' | 'session'>('session');
   const [isReferenceInputAreaCollapsed, setIsReferenceInputAreaCollapsed] = useState(false);
-  
-  const [isReferencingModeActive, setIsReferencingModeActive] = useState(false);
-  const [isReferencesPanelCollapsed, setIsReferencesPanelCollapsed] = useState(false); // For chevron collapse
-  const [referenceViewMode, setReferenceViewMode] = useState<'list' | 'grid'>('list');
 
+  const [isReferencingModeActive, setIsReferencingModeActive] = useState(false);
+  const [isReferencesPanelCollapsed, setIsReferencesPanelCollapsed] = useState(false);
+  const [referenceViewMode, setReferenceViewMode] = useState<'list' | 'grid'>('list');
 
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const actionsButtonRef = useRef<HTMLButtonElement>(null);
@@ -129,18 +138,51 @@ const App: React.FC = () => {
 
   const [notification, setNotification] = useState<NotificationState | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isConfirmationModalOpen, setIsConfirmationModalOpen] = useState(false);
+  const [confirmationModalConfig, setConfirmationModalConfig] = useState<ConfirmationModalConfig | null>(null);
+
+  const [directoryHandle, setDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [isFolderSyncActive, setIsFolderSyncActive] = useState<boolean>(false);
+  const [isLoadingDirectory, setIsLoadingDirectory] = useState<boolean>(false);
+  const [syncedFolderName, setSyncedFolderName] = useState<string | null>(null);
+  const browserSupportsFileSystemAccessAPI = typeof window.showDirectoryPicker === 'function';
+
+  const [hoveredRatingInBar, setHoveredRatingInBar] = useState<number>(0);
+  const [imageCardSize, setImageCardSize] = useState<number>(DEFAULT_IMAGE_CARD_SIZE); 
+  const [ratingFilter, setRatingFilter] = useState<number | null>(null);
+
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const filterPanelButtonRef = useRef<HTMLButtonElement>(null);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
 
 
   const isReorderEnabled = useMemo(() => {
-    return imageFilter === ImageFilterType.ASSOCIATED && !!filteringByReferenceDetail;
-  }, [imageFilter, filteringByReferenceDetail]);
+    return imageFilter === ImageFilterType.ASSOCIATED && !!filteringByReferenceDetail && !isFolderSyncActive;
+  }, [imageFilter, filteringByReferenceDetail, isFolderSyncActive]);
 
   const imagesByIdMap = useMemo(() => new Map(images.map(img => [img.id, img])), [images]);
   const referenceMap = useMemo(() => new Map(references.map(ref => [ref.id, ref])), [references]);
+  const sessionMap = useMemo(() => new Map(sessions.map(s => [s.id, s])), [sessions]);
 
-  const areAnyImagesAssociated = useMemo(() => {
-    return images.some(image => !!image.associatedReferenceId);
-  }, [images]);
+  const areAnyImagesAssociated = useMemo(() => images.some(image => !!image.associatedReferenceId), [images]);
+
+  const showAppNotification = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+  }, []);
+
+  const clearAllDataForNewLoad = useCallback(() => {
+    setImages([]); setReferences([]); setSelectedImageIds(new Set()); setSelectionAnchorId(null);
+    setReferenceImageOrder(new Map()); setFilteringByReferenceDetail(null); setImageFilter(ImageFilterType.ALL);
+    setCurrentLoadedSessionName(null); setLoadedSessionNameForShare(null); setRatingFilter(null);
+    setImageSortOrder(SortOrder.DESC); setImageCardSize(DEFAULT_IMAGE_CARD_SIZE);
+  }, []);
+
+  const resetReferencesAndSessionState = useCallback(() => {
+    setReferences([]); setReferenceImageOrder(new Map()); setFilteringByReferenceDetail(null);
+    setImageFilter(ImageFilterType.ALL); setCurrentLoadedSessionName(null); setLoadedSessionNameForShare(null); setRatingFilter(null);
+    setImages(prevImages => prevImages.map(img => img.associatedReferenceId ? { ...img, associatedReferenceId: null, lastModified: Date.now() } : img));
+    setImageSortOrder(SortOrder.DESC); setImageCardSize(DEFAULT_IMAGE_CARD_SIZE);
+  }, []);
 
   const handleImagesUpload = useCallback((newImageFiles: ImageFile[]) => {
     setImages(prevImages => [...prevImages, ...newImageFiles]);
@@ -148,1300 +190,836 @@ const App: React.FC = () => {
 
   const addReferencesFromText = useCallback((text: string) => {
     if (text.trim() === '') return 0;
-    const newRefTexts = text
-      .split(/[,\s]+/) 
-      .map(t => t.trim())
-      .filter(t => t !== '' && !references.some(ref => ref.text.toLowerCase() === t.toLowerCase())); 
-      
-    const newRefObjects: Reference[] = newRefTexts.map(t => ({
-      id: crypto.randomUUID(),
-      text: t,
-    }));
-
-    if (newRefObjects.length > 0) {
-      setReferences(prevReferences => [...prevReferences, ...newRefObjects]);
-    }
+    const newRefTexts = text.split(/[,\n\s]+/).map(t => t.trim()).filter(t => t !== '' && !references.some(ref => ref.text.toLowerCase() === t.toLowerCase()));
+    const newRefObjects: Reference[] = newRefTexts.map(t => ({ id: crypto.randomUUID(), text: t }));
+    if (newRefObjects.length > 0) setReferences(prev => [...prev, ...newRefObjects]);
     return newRefObjects.length;
   }, [references]);
 
-  const processFileListAndSetImages = useCallback((fileList: FileList) => {
-    const filesArray: File[] = Array.from(fileList); // Accept all files
+  const processAndSetImageFiles = useCallback(async (filesArray: File[]): Promise<ImageFile[]> => {
+    if (filesArray.length === 0) return [];
+    const isKnownImageType = (fileType: string) => ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'].some(t => fileType.startsWith(t));
+    return Promise.all(filesArray.map(file => new Promise<ImageFile>((resolve, reject) => {
+      const baseFileProps = { id: crypto.randomUUID(), name: file.name, type: file.type, size: file.size, lastModified: file.lastModified, fileObject: file, rating: 0 };
+      if (isKnownImageType(file.type)) {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve({ ...baseFileProps, dataUrl: e.target?.result as string });
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      } else {
+        resolve(baseFileProps as ImageFile); 
+      }
+    })));
+  }, []);
+
+  const processFileListAndSetImages = useCallback(async (fileList: FileList) => {
+    const filesArray: File[] = Array.from(fileList);
     if (filesArray.length === 0) return;
-
-    const newFileObjectsPromises: Promise<ImageFile>[] = filesArray.map(file => {
-      return new Promise((resolve, reject) => {
-        const isKnownImageType = (fileType: string) => 
-          ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'].some(t => fileType.startsWith(t));
-
-        if (isKnownImageType(file.type)) {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            resolve({
-              id: crypto.randomUUID(),
-              name: file.name,
-              type: file.type,
-              size: file.size,
-              lastModified: file.lastModified,
-              dataUrl: e.target?.result as string,
-              fileObject: file,
-            });
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        } else {
-          // For non-image files or unrenderable image types, resolve without dataUrl
-          resolve({
-            id: crypto.randomUUID(),
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            lastModified: file.lastModified,
-            // dataUrl is omitted, will be undefined
-            fileObject: file,
-          });
-        }
-      });
-    });
-
-    Promise.all(newFileObjectsPromises)
-      .then(fileObjects => {
-        if (fileObjects.length > 0) {
-          handleImagesUpload(fileObjects);
-        }
-      })
-      .catch(error => console.error("Error reading files:", error));
-  }, [handleImagesUpload]);
+    try {
+      const fileObjects = await processAndSetImageFiles(filesArray);
+      if (fileObjects.length > 0) handleImagesUpload(fileObjects);
+    } catch (error) {
+      console.error("Error reading files:", error);
+      showAppNotification("Error processing some files.", "error");
+    }
+  }, [handleImagesUpload, processAndSetImageFiles, showAppNotification]);
 
   useEffect(() => {
     const dragTarget = document.documentElement;
-
     const handleDragEnter = (event: globalThis.DragEvent) => {
-      event.preventDefault();
+      event.preventDefault(); if (isFolderSyncActive) return;
       if (event.dataTransfer?.types.includes('Files')) {
         dragOverDocumentCounterRef.current++;
-        if (!showDropZoneOverlay) { 
-          const randomIndex = Math.floor(Math.random() * dropPhrases.length);
-          setCurrentDropPhrase(dropPhrases[randomIndex]);
-          setShowDropZoneOverlay(true);
-        }
+        if (!showDropZoneOverlay) { setCurrentDropPhrase(dropPhrases[Math.floor(Math.random() * dropPhrases.length)]); setShowDropZoneOverlay(true); }
       }
     };
-
-    const handleDragOver = (event: globalThis.DragEvent) => {
-      event.preventDefault(); 
-    };
-
+    const handleDragOver = (event: globalThis.DragEvent) => event.preventDefault();
     const handleDragLeave = (event: globalThis.DragEvent) => {
-      event.preventDefault();
+      event.preventDefault(); if (isFolderSyncActive) return;
       if (event.dataTransfer?.types.includes('Files')) {
-          dragOverDocumentCounterRef.current--;
-          if (dragOverDocumentCounterRef.current <= 0) {
-            setShowDropZoneOverlay(false);
-            dragOverDocumentCounterRef.current = 0;
-          }
+        dragOverDocumentCounterRef.current--;
+        if (dragOverDocumentCounterRef.current <= 0) { setShowDropZoneOverlay(false); dragOverDocumentCounterRef.current = 0; }
       }
     };
-
     const handleDrop = (event: globalThis.DragEvent) => {
-      event.preventDefault();
-      setShowDropZoneOverlay(false);
-      dragOverDocumentCounterRef.current = 0;
-      if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
-        processFileListAndSetImages(event.dataTransfer.files);
-      }
+      event.preventDefault(); if (isFolderSyncActive) return;
+      setShowDropZoneOverlay(false); dragOverDocumentCounterRef.current = 0;
+      if (event.dataTransfer?.files?.length) processFileListAndSetImages(event.dataTransfer.files);
     };
-
-    dragTarget.addEventListener('dragenter', handleDragEnter);
-    dragTarget.addEventListener('dragover', handleDragOver);
-    dragTarget.addEventListener('dragleave', handleDragLeave);
-    dragTarget.addEventListener('drop', handleDrop);
-
+    dragTarget.addEventListener('dragenter', handleDragEnter); dragTarget.addEventListener('dragover', handleDragOver);
+    dragTarget.addEventListener('dragleave', handleDragLeave); dragTarget.addEventListener('drop', handleDrop);
     return () => {
-      dragTarget.removeEventListener('dragenter', handleDragEnter);
-      dragTarget.removeEventListener('dragover', handleDragOver);
-      dragTarget.removeEventListener('dragleave', handleDragLeave);
-      dragTarget.removeEventListener('drop', handleDrop);
+      dragTarget.removeEventListener('dragenter', handleDragEnter); dragTarget.removeEventListener('dragover', handleDragOver);
+      dragTarget.removeEventListener('dragleave', handleDragLeave); dragTarget.removeEventListener('drop', handleDrop);
     };
-  }, [processFileListAndSetImages, showDropZoneOverlay]);
-
+  }, [processFileListAndSetImages, showDropZoneOverlay, isFolderSyncActive]);
 
   const filteredAndSortedImages = useMemo(() => {
     let filtered = images.filter(image => {
-      if (imageFilter === ImageFilterType.ASSOCIATED) {
-        if (filteringByReferenceDetail) {
-          return image.associatedReferenceId === filteringByReferenceDetail.id;
-        }
-        return !!image.associatedReferenceId;
-      }
-      if (imageFilter === ImageFilterType.UNASSOCIATED) {
-        return !image.associatedReferenceId;
-      }
-      return true; // ImageFilterType.ALL
+      if (imageFilter === ImageFilterType.ASSOCIATED) return filteringByReferenceDetail ? image.associatedReferenceId === filteringByReferenceDetail.id : !!image.associatedReferenceId;
+      if (imageFilter === ImageFilterType.UNASSOCIATED) return !image.associatedReferenceId;
+      return true;
     });
+
+    if (ratingFilter !== null) {
+      filtered = filtered.filter(image => {
+        const imageActualRating = image.rating === undefined ? 0 : image.rating;
+        return imageActualRating === ratingFilter;
+      });
+    }
 
     if (isReorderEnabled && filteringByReferenceDetail) {
       const customOrderIds = referenceImageOrder.get(filteringByReferenceDetail.id);
       if (customOrderIds) {
-        const orderedImages: ImageFile[] = [];
-        const customOrderSet = new Set(customOrderIds);
-
-        customOrderIds.forEach(id => {
-          const img = imagesByIdMap.get(id);
-          if (img && img.associatedReferenceId === filteringByReferenceDetail.id) { 
-            orderedImages.push(img);
-          }
-        });
-
-        const remainingImages = filtered
-          .filter(img => !customOrderSet.has(img.id))
-          .sort((a, b) => imageSortOrder === SortOrder.DESC ? b.lastModified - a.lastModified : a.lastModified - b.lastModified);
-        
+        const orderedImages: ImageFile[] = []; const customOrderSet = new Set(customOrderIds);
+        customOrderIds.forEach(id => { const img = imagesByIdMap.get(id); if (img && img.associatedReferenceId === filteringByReferenceDetail.id) orderedImages.push(img); });
+        const remainingImages = filtered.filter(img => !customOrderSet.has(img.id)).sort((a, b) => imageSortOrder === SortOrder.DESC ? b.lastModified - a.lastModified : a.lastModified - b.lastModified);
         return [...orderedImages, ...remainingImages];
       }
     }
+    return [...filtered].sort((a, b) => imageSortOrder === SortOrder.DESC ? b.lastModified - a.lastModified : a.lastModified - b.lastModified);
+  }, [images, imageSortOrder, imageFilter, filteringByReferenceDetail, referenceImageOrder, isReorderEnabled, imagesByIdMap, ratingFilter]);
 
-    return [...filtered].sort((a, b) => {
-      if (imageSortOrder === SortOrder.DESC) {
-        return b.lastModified - a.lastModified;
-      }
-      return a.lastModified - b.lastModified;
-    });
-  }, [images, imageSortOrder, imageFilter, filteringByReferenceDetail, referenceImageOrder, isReorderEnabled, imagesByIdMap]);
-  
   const groupedImagesForDisplay = useMemo(() => {
     if (filteredAndSortedImages.length === 0) return [];
-  
-    // If filtering by a specific reference, always show as one group
     if (filteringByReferenceDetail) {
-      const ref = referenceMap.get(filteringByReferenceDetail.id);
-      if (!ref) return []; 
-      return [{
-        reference: ref,
-        images: filteredAndSortedImages,
-        isUnassociatedGroup: false,
-        key: filteringByReferenceDetail.id
-      }];
+      const ref = referenceMap.get(filteringByReferenceDetail.id); if (!ref) return [];
+      return [{ reference: ref, images: filteredAndSortedImages, isUnassociatedGroup: false, key: filteringByReferenceDetail.id }];
     }
-  
     const finalGroups: Array<{ reference?: Reference; images: ImageFile[]; isUnassociatedGroup: boolean; key: string }> = [];
-    
-    // Store all images associated with a reference, keyed by referenceId
-    // The images list for each reference will maintain the order from filteredAndSortedImages
     const associatedImageMap = new Map<string, { ref: Reference; images: ImageFile[] }>();
-    // Store all unassociated images, maintaining their order from filteredAndSortedImages
     const unassociatedImages: ImageFile[] = [];
-  
-    for (const image of filteredAndSortedImages) { // filteredAndSortedImages is already sorted by date/custom order
+    for (const image of filteredAndSortedImages) {
       if (image.associatedReferenceId) {
         const ref = referenceMap.get(image.associatedReferenceId);
-        if (ref) { // Ensure the reference actually exists
-          if (!associatedImageMap.has(ref.id)) {
-            associatedImageMap.set(ref.id, { ref, images: [] });
-          }
-          associatedImageMap.get(ref.id)!.images.push(image); // Images are added preserving their sorted order
-        } else {
-          // Image associated with a deleted/unknown ref, treat as unassociated for display
-          unassociatedImages.push(image);
-        }
-      } else {
-        unassociatedImages.push(image);
-      }
+        if (ref) {
+          if (!associatedImageMap.has(ref.id)) associatedImageMap.set(ref.id, { ref, images: [] });
+          associatedImageMap.get(ref.id)!.images.push(image);
+        } else { unassociatedImages.push(image); }
+      } else { unassociatedImages.push(image); }
     }
-  
-    // Add associated groups to finalGroups, ordered by the main 'references' state array
     if (imageFilter === ImageFilterType.ALL || imageFilter === ImageFilterType.ASSOCIATED) {
-      references.forEach(refObj => { // Iterate through the global 'references' list from state
+      references.forEach(refObj => {
         const groupData = associatedImageMap.get(refObj.id);
-        if (groupData && groupData.images.length > 0) {
-          finalGroups.push({
-            reference: groupData.ref,
-            images: groupData.images, // These images are already sorted correctly relative to each other
-            isUnassociatedGroup: false,
-            key: groupData.ref.id,
-          });
-        }
+        if (groupData?.images.length) finalGroups.push({ reference: groupData.ref, images: groupData.images, isUnassociatedGroup: false, key: groupData.ref.id });
       });
     }
-    
-    // Add the group of unassociated images at the end, if any exist and current filter allows them
     if ((imageFilter === ImageFilterType.ALL || imageFilter === ImageFilterType.UNASSOCIATED) && unassociatedImages.length > 0) {
-      finalGroups.push({
-        images: unassociatedImages, // Already sorted correctly relative to each other
-        isUnassociatedGroup: true,
-        key: 'unassociated-group'
-      });
+      finalGroups.push({ images: unassociatedImages, isUnassociatedGroup: true, key: 'unassociated-group' });
     }
-    
     return finalGroups;
-  
   }, [filteredAndSortedImages, references, referenceMap, filteringByReferenceDetail, imageFilter]);
 
-
   const toggleSortOrder = useCallback(() => {
-    if (isReorderEnabled) {
-        console.log("Custom order is active for this reference; date sort is secondary for un-ordered items.");
-    }
-    setImageSortOrder(prevOrder => prevOrder === SortOrder.DESC ? SortOrder.ASC : SortOrder.DESC);
-  }, [isReorderEnabled]);
-
-  const handleReferenceInputChange = useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setReferenceInput(event.target.value);
+    setImageSortOrder(prev => prev === SortOrder.DESC ? SortOrder.ASC : SortOrder.DESC);
   }, []);
 
-  const handleAddReferencesFromInput = useCallback(() => {
-    const countAdded = addReferencesFromText(referenceInput);
-    if (countAdded > 0) {
-      setReferenceInput('');
-    }
-  }, [referenceInput, addReferencesFromText]);
+  const handleReferenceInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => setReferenceInput(e.target.value), []);
+  const handleAddReferencesFromInput = useCallback(() => { if (addReferencesFromText(referenceInput) > 0) setReferenceInput(''); }, [referenceInput, addReferencesFromText]);
 
   const handleImageSelect = useCallback((imageId: string, event: React.MouseEvent) => {
-    if (isReorderEnabled) return; 
-
+    if (isReorderEnabled) return;
     const isShiftClick = event.shiftKey;
-    // For shift-click, we need a flat list of currently *visible* images in their display order to determine range.
-    // This flat list can be derived from `groupedImagesForDisplay`.
-    const visibleImagesForShiftSelection = groupedImagesForDisplay.flatMap(group => group.images);
-
-
-    if (isShiftClick && selectionAnchorId && visibleImagesForShiftSelection.length > 0) {
-      const newSelectedIds = new Set<string>();
-      const anchorIndex = visibleImagesForShiftSelection.findIndex(img => img.id === selectionAnchorId);
-      const currentIndex = visibleImagesForShiftSelection.findIndex(img => img.id === imageId);
-
-      if (anchorIndex !== -1 && currentIndex !== -1) {
-        const startIndex = Math.min(anchorIndex, currentIndex);
-        const endIndex = Math.max(anchorIndex, currentIndex);
-        for (let i = startIndex; i <= endIndex; i++) {
-          if (visibleImagesForShiftSelection[i]) {
-            newSelectedIds.add(visibleImagesForShiftSelection[i].id);
-          }
-        }
-        // Preserve existing selections if Ctrl/Cmd is also held, otherwise replace.
-        // Current behavior is replace, which is fine for shift-click.
-        setSelectedImageIds(newSelectedIds);
-      } else { 
-        // Fallback if anchor or current not found in visible list (shouldn't happen if clicking visible items)
-        setSelectedImageIds(prevSelected => {
-          const newSelected = new Set(prevSelected);
-          if (newSelected.has(imageId)) {
-            newSelected.delete(imageId);
-          } else {
-            newSelected.add(imageId);
-          }
-          return newSelected;
-        });
-        setSelectionAnchorId(imageId);
-      }
-    } else { 
-      setSelectedImageIds(prevSelected => {
-        const newSelected = new Set(prevSelected);
-        if (newSelected.has(imageId)) {
-          newSelected.delete(imageId);
-        } else {
-          newSelected.add(imageId);
-        }
-        return newSelected;
-      });
-      setSelectionAnchorId(imageId);
-    }
+    const visibleImagesForShift = groupedImagesForDisplay.flatMap(g => g.images);
+    if (isShiftClick && selectionAnchorId && visibleImagesForShift.length) {
+      const newSelected = new Set<string>();
+      const anchorIdx = visibleImagesForShift.findIndex(img => img.id === selectionAnchorId);
+      const currentIdx = visibleImagesForShift.findIndex(img => img.id === imageId);
+      if (anchorIdx !== -1 && currentIdx !== -1) {
+        const [start, end] = [Math.min(anchorIdx, currentIdx), Math.max(anchorIdx, currentIdx)];
+        for (let i = start; i <= end; i++) if (visibleImagesForShift[i]) newSelected.add(visibleImagesForShift[i].id);
+        setSelectedImageIds(newSelected);
+      } else { setSelectedImageIds(prev => { const ns = new Set(prev); ns.has(imageId) ? ns.delete(imageId) : ns.add(imageId); return ns; }); setSelectionAnchorId(imageId); }
+    } else { setSelectedImageIds(prev => { const ns = new Set(prev); ns.has(imageId) ? ns.delete(imageId) : ns.add(imageId); return ns; }); setSelectionAnchorId(imageId); }
   }, [selectionAnchorId, groupedImagesForDisplay, isReorderEnabled]);
 
-
   const handleUnassociateImage = useCallback((imageId: string) => {
-    const imageToUpdate = imagesByIdMap.get(imageId);
-    if (!imageToUpdate) return;
-    const oldReferenceId = imageToUpdate.associatedReferenceId;
-
-    setImages(prevImages => 
-      prevImages.map(img => 
-        img.id === imageId ? { ...img, associatedReferenceId: null, lastModified: Date.now() } : img
-      )
-    );
-
-    if (oldReferenceId) {
-        setReferenceImageOrder(prevOrders => {
-            const newOrders = new Map(prevOrders);
-            const currentOrder = newOrders.get(oldReferenceId);
-            if (currentOrder) {
-                const updatedOrder = currentOrder.filter(id => id !== imageId);
-                if (updatedOrder.length > 0) {
-                    newOrders.set(oldReferenceId, updatedOrder);
-                } else {
-                    newOrders.delete(oldReferenceId); 
-                }
-            }
-            return newOrders;
-        });
+    const imgToUpdate = imagesByIdMap.get(imageId); if (!imgToUpdate) return;
+    const oldRefId = imgToUpdate.associatedReferenceId;
+    setImages(prev => prev.map(img => img.id === imageId ? { ...img, associatedReferenceId: null, lastModified: Date.now() } : img));
+    if (oldRefId && !isFolderSyncActive) {
+      setReferenceImageOrder(prev => {
+        const newO = new Map(prev); const currO = newO.get(oldRefId);
+        if (currO) { const updO = currO.filter(id => id !== imageId); updO.length ? newO.set(oldRefId, updO) : newO.delete(oldRefId); } return newO;
+      });
     }
-    
-    if (filteringByReferenceDetail && oldReferenceId === filteringByReferenceDetail.id) {
-        const stillHasImagesForThisRef = images.some(img => 
-            img.id !== imageId && img.associatedReferenceId === filteringByReferenceDetail.id
-        );
-        if (!stillHasImagesForThisRef) {
-            setFilteringByReferenceDetail(null); 
-             // If referencing mode active, default to "All Associated" if it makes sense, or "All".
-            if (isReferencingModeActive) {
-                const anyOtherAssociated = images.some(img => img.id !== imageId && img.associatedReferenceId);
-                setImageFilter(anyOtherAssociated ? ImageFilterType.ASSOCIATED : ImageFilterType.ALL);
-            } else {
-                 setImageFilter(ImageFilterType.ALL);
-            }
-        }
-    }
-  }, [imagesByIdMap, images, filteringByReferenceDetail, isReferencingModeActive]); 
-  
-  const handleDeleteImage = useCallback((imageId: string) => {
-    const imageToDelete = imagesByIdMap.get(imageId);
-    if (!imageToDelete) return;
-    const associatedRefId = imageToDelete.associatedReferenceId;
-
-    setImages(prevImages => prevImages.filter(img => img.id !== imageId));
-    setSelectedImageIds(prevSelected => {
-      const newSelected = new Set(prevSelected);
-      newSelected.delete(imageId);
-      return newSelected;
-    });
-    if (selectionAnchorId === imageId) {
-      setSelectionAnchorId(null);
-    }
-
-    if (associatedRefId) {
-        setReferenceImageOrder(prevOrders => {
-            const newOrders = new Map(prevOrders);
-            const currentOrder = newOrders.get(associatedRefId);
-            if (currentOrder) {
-                const updatedOrder = currentOrder.filter(id => id !== imageId);
-                 if (updatedOrder.length > 0) {
-                    newOrders.set(associatedRefId, updatedOrder);
-                } else {
-                    newOrders.delete(associatedRefId);
-                }
-            }
-            return newOrders;
-        });
-    }
-
-    if (filteringByReferenceDetail && associatedRefId === filteringByReferenceDetail.id) {
-        const stillHasImagesForThisRef = images.some(img => 
-            img.id !== imageId && img.associatedReferenceId === filteringByReferenceDetail.id
-        );
-        if (!stillHasImagesForThisRef) {
-            setFilteringByReferenceDetail(null);
-             if (isReferencingModeActive) {
-                const anyOtherAssociated = images.some(img => img.id !== imageId && img.associatedReferenceId);
-                setImageFilter(anyOtherAssociated ? ImageFilterType.ASSOCIATED : ImageFilterType.ALL);
-            } else {
-                 setImageFilter(ImageFilterType.ALL);
-            }
-        }
-    }
-  }, [selectionAnchorId, images, filteringByReferenceDetail, imagesByIdMap, isReferencingModeActive]); 
-
-  const handleDeleteReference = useCallback((referenceId: string) => {
-    setReferences(prev => prev.filter(ref => ref.id !== referenceId));
-    setImages(prevImages => 
-      prevImages.map(img => 
-        img.associatedReferenceId === referenceId ? { ...img, associatedReferenceId: null, lastModified: Date.now() } : img
-      )
-    );
-    setReferenceImageOrder(prevOrders => {
-        const newOrders = new Map(prevOrders);
-        newOrders.delete(referenceId);
-        return newOrders;
-    });
-    if (filteringByReferenceDetail?.id === referenceId) {
+    if (filteringByReferenceDetail?.id === oldRefId && !images.some(img => img.id !== imageId && img.associatedReferenceId === filteringByReferenceDetail.id)) {
       setFilteringByReferenceDetail(null);
-      // After deleting the currently filtered reference, switch to a sensible default filter.
-      if (isReferencingModeActive) {
-        const anyOtherAssociated = images.some(img => img.associatedReferenceId && img.associatedReferenceId !== referenceId);
-        setImageFilter(anyOtherAssociated ? ImageFilterType.ASSOCIATED : ImageFilterType.ALL);
-      } else {
-        setImageFilter(ImageFilterType.ALL);
-      }
+      setImageFilter(isReferencingModeActive && images.some(i => i.id !== imageId && i.associatedReferenceId) ? ImageFilterType.ASSOCIATED : ImageFilterType.ALL);
     }
-  }, [filteringByReferenceDetail, images, isReferencingModeActive]);
+  }, [imagesByIdMap, images, filteringByReferenceDetail, isReferencingModeActive, isFolderSyncActive]);
 
+  const handleDeleteImage = useCallback((imageId: string) => {
+    if (isFolderSyncActive) { showAppNotification("Cannot delete files from synced folder. Manage in file system & refresh.", "error"); return; }
+    const imgToDelete = imagesByIdMap.get(imageId); if (!imgToDelete) return;
+    const assocRefId = imgToDelete.associatedReferenceId;
+    setImages(prev => prev.filter(img => img.id !== imageId));
+    setSelectedImageIds(prev => { const ns = new Set(prev); ns.delete(imageId); return ns; });
+    if (selectionAnchorId === imageId) setSelectionAnchorId(null);
+    if (assocRefId) {
+      setReferenceImageOrder(prev => {
+        const newO = new Map(prev); const currO = newO.get(assocRefId);
+        if (currO) { const updO = currO.filter(id => id !== imageId); updO.length ? newO.set(assocRefId, updO) : newO.delete(assocRefId); } return newO;
+      });
+    }
+     if (filteringByReferenceDetail?.id === assocRefId && !images.some(img => img.id !== imageId && img.associatedReferenceId === filteringByReferenceDetail.id)) {
+      setFilteringByReferenceDetail(null);
+      setImageFilter(isReferencingModeActive && images.some(i => i.id !== imageId && i.associatedReferenceId) ? ImageFilterType.ASSOCIATED : ImageFilterType.ALL);
+    }
+  }, [selectionAnchorId, images, filteringByReferenceDetail, imagesByIdMap, isReferencingModeActive, isFolderSyncActive, showAppNotification]);
+
+  const handleDeleteReference = useCallback((refId: string) => {
+    const updRefs = references.filter(ref => ref.id !== refId); setReferences(updRefs);
+    if (updRefs.length === 0 && !isFolderSyncActive) { setCurrentLoadedSessionName(null); setLoadedSessionNameForShare(null); }
+    setImages(prev => prev.map(img => img.associatedReferenceId === refId ? { ...img, associatedReferenceId: null, lastModified: Date.now() } : img));
+    if (!isFolderSyncActive) { setReferenceImageOrder(prev => { const newO = new Map(prev); newO.delete(refId); return newO; }); }
+    if (filteringByReferenceDetail?.id === refId) {
+      setFilteringByReferenceDetail(null);
+      setImageFilter(isReferencingModeActive && images.some(i => i.associatedReferenceId && i.associatedReferenceId !== refId) ? ImageFilterType.ASSOCIATED : ImageFilterType.ALL);
+    }
+  }, [references, images, filteringByReferenceDetail, isReferencingModeActive, isFolderSyncActive]);
 
   const imageCountByReference = useMemo(() => {
     const counts = new Map<string, number>();
-    images.forEach(img => {
-      if (img.associatedReferenceId) {
-        counts.set(img.associatedReferenceId, (counts.get(img.associatedReferenceId) || 0) + 1);
-      }
-    });
+    images.forEach(img => { if (img.associatedReferenceId) counts.set(img.associatedReferenceId, (counts.get(img.associatedReferenceId) || 0) + 1); });
     return counts;
   }, [images]);
 
   const handleMainFilterChange = useCallback((newFilter: ImageFilterType) => {
     setImageFilter(newFilter);
-    setFilteringByReferenceDetail(null); 
-    if (!isReorderEnabled) { 
-        setSelectedImageIds(new Set()); 
+    setFilteringByReferenceDetail(null); // Clear specific ref filter when changing main status filter
+
+    const willReorderBeDisabled = !(newFilter === ImageFilterType.ASSOCIATED && !!filteringByReferenceDetail && !isFolderSyncActive);
+
+    if (willReorderBeDisabled) {
+        setSelectedImageIds(new Set());
         setSelectionAnchorId(null);
     }
-  }, [isReorderEnabled]);
+  }, [filteringByReferenceDetail, isFolderSyncActive]); 
 
-  const handleReferenceItemClick = useCallback((referenceId: string) => {
-    const refDetails = referenceMap.get(referenceId);
-    if (!refDetails) return;
-  
-    if (selectedImageIds.size > 0 && !isReorderEnabled) { 
+  const handleReferenceItemClick = useCallback((refId: string) => {
+    const refDetails = referenceMap.get(refId); if (!refDetails) return;
+    if (selectedImageIds.size > 0 && !isReorderEnabled) {
       const now = Date.now();
-      setImages(prevImages =>
-        prevImages.map(img =>
-          selectedImageIds.has(img.id) ? { ...img, associatedReferenceId: referenceId, lastModified: now } : img
-        )
-      );
-      // Update referenceImageOrder: newly associated images go to the end of the custom order for that reference.
-      setReferenceImageOrder(prevOrders => {
-        const newOrders = new Map(prevOrders);
-        const currentOrder = newOrders.get(referenceId) || [];
-        const newIdsToAdd = Array.from(selectedImageIds).filter(id => !currentOrder.includes(id));
-        newOrders.set(referenceId, [...currentOrder, ...newIdsToAdd]);
-        return newOrders;
-      });
-
-      setSelectedImageIds(new Set());
-      setSelectionAnchorId(null);
-    } else if (selectedImageIds.size === 0) { 
-      if (filteringByReferenceDetail?.id === referenceId) {
-        setFilteringByReferenceDetail(null); 
-        // Revert to a broader filter, e.g., all associated or all files, depending on context
-         if(imageFilter === ImageFilterType.ASSOCIATED) { /* No change needed if already on 'Associated' */ }
-         else { setImageFilter(ImageFilterType.ASSOCIATED); } // Or ImageFilterType.ALL if preferred
-      } else {
-        const refAssociatedImageCount = imageCountByReference.get(referenceId) || 0;
-        if (refAssociatedImageCount > 0) {
-          setImageFilter(ImageFilterType.ASSOCIATED); 
-          setFilteringByReferenceDetail({ id: referenceId, text: refDetails.text });
-        } else {
-          setFilteringByReferenceDetail(null); 
-          // Optionally, show a notification that this reference has no files.
-        }
+      setImages(prev => prev.map(img => selectedImageIds.has(img.id) ? { ...img, associatedReferenceId: refId, lastModified: now } : img));
+      if (!isFolderSyncActive) {
+        setReferenceImageOrder(prev => {
+          const newO = new Map(prev); const currO = newO.get(refId) || [];
+          const newIds = Array.from(selectedImageIds).filter(id => !currO.includes(id));
+          newO.set(refId, [...currO, ...newIds]); return newO;
+        });
       }
-      setSelectedImageIds(new Set()); 
-      setSelectionAnchorId(null);
+      setSelectedImageIds(new Set()); setSelectionAnchorId(null);
+    } else if (selectedImageIds.size === 0) {
+      if (filteringByReferenceDetail?.id === refId) {
+        setFilteringByReferenceDetail(null); if (imageFilter !== ImageFilterType.ASSOCIATED) setImageFilter(ImageFilterType.ASSOCIATED);
+      } else {
+        if ((imageCountByReference.get(refId) || 0) > 0) { setImageFilter(ImageFilterType.ASSOCIATED); setFilteringByReferenceDetail({ id: refId, text: refDetails.text }); }
+        else setFilteringByReferenceDetail(null);
+      }
+      setSelectedImageIds(new Set()); setSelectionAnchorId(null);
     }
-  }, [selectedImageIds, referenceMap, imageCountByReference, filteringByReferenceDetail, isReorderEnabled]);
-
-
-  const FilterButtonComponent: React.FC<{ 
-    label: string;
-    type: ImageFilterType;
-    currentFilter: ImageFilterType;
-    onClick: (type: ImageFilterType) => void;
-    isActive?: boolean; 
-  }> = ({ label, type, currentFilter, onClick, isActive }) => (
-    <button
-      onClick={() => onClick(type)}
-      className={`px-3 py-1.5 text-sm rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-opacity-75 ${
-        (isActive === undefined ? currentFilter === type : isActive) && !filteringByReferenceDetail 
-        ? 'bg-slate-700 text-white focus:ring-slate-500'
-        : (isActive && filteringByReferenceDetail && type === ImageFilterType.ASSOCIATED) 
-        ? 'bg-slate-700 text-white focus:ring-slate-500' 
-        : 'bg-gray-100 hover:bg-gray-200 text-gray-700 focus:ring-gray-400'
-      }`}
-      aria-pressed={isActive === undefined ? currentFilter === type : isActive}
-    >
-      {label}
-    </button>
-  );
+  }, [selectedImageIds, referenceMap, imageCountByReference, filteringByReferenceDetail, isReorderEnabled, imageFilter, isFolderSyncActive]);
   
   const getCurrentViewTitle = () => {
-    const count = filteredAndSortedImages.length; // This count is correct for the overall filter
-    if (filteringByReferenceDetail && imageFilter === ImageFilterType.ASSOCIATED) {
-        return `Files for: ${filteringByReferenceDetail.text}`;
-    }
-    if (!isReferencingModeActive || isReferencesPanelCollapsed) {
-        if (filteringByReferenceDetail && imageFilter === ImageFilterType.ASSOCIATED) {
-             return `Files for: ${filteringByReferenceDetail.text}`;
-        }
-        return "All Files"; 
-    }
+    if (isFolderSyncActive) return `Folder: ${syncedFolderName || 'Unknown'}`;
+    if (filteringByReferenceDetail && imageFilter === ImageFilterType.ASSOCIATED) return `Files for: ${filteringByReferenceDetail.text}`;
+    if (!isReferencingModeActive || isReferencesPanelCollapsed) return filteringByReferenceDetail && imageFilter === ImageFilterType.ASSOCIATED ? `Files for: ${filteringByReferenceDetail.text}` : "All Files";
+    switch (imageFilter) { case ImageFilterType.ALL: return "All Files"; case ImageFilterType.ASSOCIATED: return "All Associated Files"; case ImageFilterType.UNASSOCIATED: return "All Unassociated Files"; default: return "Current View"; }
+  };
 
-    switch (imageFilter) {
-        case ImageFilterType.ALL: return "All Files"; 
-        case ImageFilterType.ASSOCIATED: return "All Associated Files"; 
-        case ImageFilterType.UNASSOCIATED: return "All Unassociated Files"; 
-        default: return "Current View";
-    }
-  }
-
-  const handleImageDragStart = useCallback((event: ReactDragEvent<HTMLDivElement>, imageId: string) => {
-    if (!isReorderEnabled) return;
-    event.dataTransfer.setData('application/vnd.file-id', imageId); 
-    event.dataTransfer.effectAllowed = 'move';
-    setDraggedImageId(imageId);
-  }, [isReorderEnabled]);
-
-  const handleImageDrop = useCallback((event: ReactDragEvent<HTMLDivElement>, targetImageId: string) => {
-    if (!isReorderEnabled || !filteringByReferenceDetail || !draggedImageId) return;
-    event.preventDefault();
-    const currentDraggedImageId = event.dataTransfer.getData('application/vnd.file-id') || draggedImageId; 
-
-
-    if (!currentDraggedImageId || currentDraggedImageId === targetImageId) {
-      setDraggedImageId(null);
-      return;
-    }
-
-    setReferenceImageOrder(prevOrders => {
-      const newOrders = new Map(prevOrders);
-      const refId = filteringByReferenceDetail.id;
-      
-      // Get the current full list of images for this reference, sorted by date/previous custom order
-      // This uses `filteredAndSortedImages` which already reflects the current visual order if custom sort is active.
-      const imagesCurrentlyVisibleForRef = filteredAndSortedImages
-                                        .filter(img => img.associatedReferenceId === refId)
-                                        .map(img => img.id);
-
-      // Use current visible order as the base if no specific order exists yet, or if it's more up-to-date.
-      let currentOrderForRef = newOrders.get(refId) || imagesCurrentlyVisibleForRef;
-      
-      // Ensure currentOrderForRef only contains valid image IDs for this reference.
-      currentOrderForRef = currentOrderForRef.filter(id => {
-          const img = imagesByIdMap.get(id);
-          return img && img.associatedReferenceId === refId;
-      });
-
-
-      const draggedImageObject = imagesByIdMap.get(currentDraggedImageId);
-      if (!draggedImageObject || draggedImageObject.associatedReferenceId !== refId) {
-        setDraggedImageId(null); // Should not happen if drag started correctly
-        return prevOrders; 
-      }
-
-      let reorderedIds = [...currentOrderForRef];
-      const draggedItemIndex = reorderedIds.indexOf(currentDraggedImageId);
-
-      if (draggedItemIndex > -1) {
-        reorderedIds.splice(draggedItemIndex, 1); // Remove dragged item from its old position
-      } else {
-        // If dragged item wasn't in currentOrderForRef (e.g. new item not yet in custom order), it's fine, will be inserted.
-      }
-      
-      const targetItemIndex = reorderedIds.indexOf(targetImageId);
-
-      if (targetItemIndex !== -1) { 
-        // Insert before the target.
-        reorderedIds.splice(targetItemIndex, 0, currentDraggedImageId); 
-      } else {
-        // Target not in current order? This might happen if `currentOrderForRef` was stale or target is new.
-        // Fallback: try to find target in the `imagesCurrentlyVisibleForRef` and insert relative to that.
-        const visibleTargetIdx = imagesCurrentlyVisibleForRef.indexOf(targetImageId);
-        if (visibleTargetIdx !== -1) {
-            // Find where to insert in `reorderedIds` to match `visibleTargetIdx`
-            let inserted = false;
-            for (let i = 0; i < reorderedIds.length; i++) {
-                if (imagesCurrentlyVisibleForRef.indexOf(reorderedIds[i]) >= visibleTargetIdx) {
-                    reorderedIds.splice(i, 0, currentDraggedImageId);
-                    inserted = true;
-                    break;
-                }
-            }
-            if (!inserted) reorderedIds.push(currentDraggedImageId); // Add to end if no suitable place found
-        } else {
-             // If target is completely unknown (shouldn't happen for a drop target), add to end.
-            reorderedIds.push(currentDraggedImageId);
-        }
-      }
-      
-      // Ensure all items in the final order are unique and actually belong to this reference
-      const finalUniqueIdsForRef = Array.from(new Set(reorderedIds))
-                                     .filter(id => {
-                                         const img = imagesByIdMap.get(id);
-                                         return img && img.associatedReferenceId === refId;
-                                     });
-
-      if (finalUniqueIdsForRef.length > 0) {
-        newOrders.set(refId, finalUniqueIdsForRef);
-      } else {
-        newOrders.delete(refId); // Should not happen if we just reordered items within it.
-      }
-      return newOrders;
+  const handleImageDragStart = useCallback((e: ReactDragEvent<HTMLDivElement>, imgId: string) => { if (!isReorderEnabled) return; e.dataTransfer.setData('application/vnd.file-id', imgId); e.dataTransfer.effectAllowed = 'move'; setDraggedImageId(imgId); }, [isReorderEnabled]);
+  const handleImageDrop = useCallback((e: ReactDragEvent<HTMLDivElement>, targetImgId: string) => {
+    if (!isReorderEnabled || !filteringByReferenceDetail || !draggedImageId) return; e.preventDefault();
+    const currDraggedId = e.dataTransfer.getData('application/vnd.file-id') || draggedImageId;
+    if (!currDraggedId || currDraggedId === targetImgId) { setDraggedImageId(null); return; }
+    setReferenceImageOrder(prevO => {
+      const newO = new Map(prevO); const refId = filteringByReferenceDetail.id;
+      const visibleForRef = filteredAndSortedImages.filter(i => i.associatedReferenceId === refId).map(i => i.id);
+      let currOrderForRef = newO.get(refId) || visibleForRef;
+      currOrderForRef = currOrderForRef.filter(id => imagesByIdMap.get(id)?.associatedReferenceId === refId);
+      const draggedObj = imagesByIdMap.get(currDraggedId); if (!draggedObj || draggedObj.associatedReferenceId !== refId) { setDraggedImageId(null); return prevO; }
+      let reordered = [...currOrderForRef]; const draggedIdx = reordered.indexOf(currDraggedId); if (draggedIdx > -1) reordered.splice(draggedIdx, 1);
+      const targetIdx = reordered.indexOf(targetImgId);
+      if (targetIdx !== -1) reordered.splice(targetIdx, 0, currDraggedId);
+      else { const visTgtIdx = visibleForRef.indexOf(targetImgId); if (visTgtIdx !== -1) { let ins = false; for (let i = 0; i < reordered.length; i++) { if (visibleForRef.indexOf(reordered[i]) >= visTgtIdx) { reordered.splice(i, 0, currDraggedId); ins = true; break; } } if (!ins) reordered.push(currDraggedId); } else reordered.push(currDraggedId); }
+      const finalUnique = Array.from(new Set(reordered)).filter(id => imagesByIdMap.get(id)?.associatedReferenceId === refId);
+      finalUnique.length ? newO.set(refId, finalUnique) : newO.delete(refId); return newO;
     });
     setDraggedImageId(null);
   }, [isReorderEnabled, filteringByReferenceDetail, filteredAndSortedImages, imagesByIdMap, draggedImageId]);
+  const handleActualDragEndFromItem = useCallback(() => setDraggedImageId(null), []);
 
-  const handleActualDragEndFromItem = useCallback(() => {
-    setDraggedImageId(null);
-  }, []);
-
-  const getReferencePreviewImageUrl = useCallback((referenceId: string): string | null => {
-    const customOrder = referenceImageOrder.get(referenceId);
-    if (customOrder && customOrder.length > 0) {
-      const firstImageId = customOrder[0];
-      const image = imagesByIdMap.get(firstImageId);
-      if (image && image.associatedReferenceId === referenceId && image.dataUrl && image.type.startsWith('image/')) {
-        return image.dataUrl;
-      }
+  const getReferencePreviewImageUrl = useCallback((refId: string): string | null => {
+    if (!isFolderSyncActive && referenceImageOrder.has(refId)) {
+      const customOrder = referenceImageOrder.get(refId);
+      if (customOrder?.length) { const img = imagesByIdMap.get(customOrder[0]); if (img?.associatedReferenceId === refId && img.dataUrl && img.type.startsWith('image/')) return img.dataUrl; }
     }
-
-    // Find the first web-renderable image in sorted order
-    const associatedFiles = images
-      .filter(img => img.associatedReferenceId === referenceId)
-      .sort((a, b) => b.lastModified - a.lastModified);
-      
-    for (const file of associatedFiles) {
-        if (file.dataUrl && file.type.startsWith('image/')) {
-            return file.dataUrl;
-        }
-    }
+    const assocFiles = images.filter(i => i.associatedReferenceId === refId).sort((a, b) => b.lastModified - a.lastModified);
+    for (const file of assocFiles) if (file.dataUrl && file.type.startsWith('image/')) return file.dataUrl;
     return null;
-  }, [images, referenceImageOrder, imagesByIdMap]);
+  }, [images, referenceImageOrder, imagesByIdMap, isFolderSyncActive]);
 
-  const handleUploadButtonClick = () => {
-    fileInputRef.current?.click();
-  };
+  const handleUploadButtonClick = () => { if (!isFolderSyncActive) fileInputRef.current?.click(); };
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (!isFolderSyncActive && e.target.files?.length) { processFileListAndSetImages(e.target.files); e.target.value = ''; } };
+  const showGallerySubtitle = !(images.length === 0 && !filteringByReferenceDetail && !isFolderSyncActive);
+  const handleSessionSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => setSessionSearchTerm(e.target.value);
 
-  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files.length > 0) {
-      processFileListAndSetImages(event.target.files);
-      event.target.value = ''; // Reset file input
-    }
-  };
+  const openConfirmationModal = useCallback((title: string, message: React.ReactNode, onConfirm: () => void, confirmText?: string) => { setConfirmationModalConfig({ title, message, onConfirmAction: onConfirm, confirmButtonText: confirmText }); setIsConfirmationModalOpen(true); }, []);
+  const closeConfirmationModal = useCallback(() => { setIsConfirmationModalOpen(false); setConfirmationModalConfig(null); }, []);
 
-  const showGallerySubtitle = !(images.length === 0 && !filteringByReferenceDetail); 
+  const performLoadExistingSession = useCallback((sessionId: string) => {
+    const session = sessionMap.get(sessionId); if (!session) return;
+    resetReferencesAndSessionState(); const refs = mockSessionReferences[sessionId]; if (refs?.length) addReferencesFromText(refs.join(', '));
+    setSelectedImageIds(new Set()); setSelectionAnchorId(null); setCurrentLoadedSessionName(session.name); setLoadedSessionNameForShare(session.name);
+    setSessionSearchTerm(''); setIsSessionListVisible(false); showAppNotification(`Session '${session.name}' loaded.`, 'success'); closeConfirmationModal();
+  }, [sessionMap, addReferencesFromText, showAppNotification, resetReferencesAndSessionState, closeConfirmationModal]);
 
-  const handleSessionSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSessionSearchTerm(event.target.value);
-    setLoadedSessionNameForShare(null);
-  };
+  const handleLoadExistingSession = useCallback((sessionId: string) => {
+    const session = sessionMap.get(sessionId); if (!session) return;
+    const hasData = references.length > 0 || (currentLoadedSessionName && currentLoadedSessionName !== session.name);
+    if (hasData) openConfirmationModal("Confirm Session Load", <><p>Loading '<strong>{session.name}</strong>' replaces current refs ({references.length}) & associations.</p><p className="mt-1">Files ({images.length}) remain.</p><p className="mt-2 font-semibold">Cannot be undone for refs.</p><p className="mt-2">Proceed?</p></>, () => performLoadExistingSession(sessionId), "Load Session");
+    else performLoadExistingSession(sessionId);
+  }, [images.length, references.length, currentLoadedSessionName, sessionMap, openConfirmationModal, performLoadExistingSession]);
 
-  const handleLoadSessionFromListItem = (sessionId: string) => {
-    const refsFromSession = mockSessionReferences[sessionId];
-    if (refsFromSession && refsFromSession.length > 0) {
-      addReferencesFromText(refsFromSession.join(', '));
-    }
-    const loadedSession = mockSessions.find(s => s.id === sessionId);
-    setLoadedSessionNameForShare(loadedSession ? loadedSession.name : null);
-    setSessionSearchTerm('');
-    setIsSessionListVisible(false);
-  };
-  
+  const performCreateNewSession = useCallback((name: string) => {
+    resetReferencesAndSessionState(); const newSess: Session = { id: crypto.randomUUID(), name }; setSessions(prev => [...prev, newSess]);
+    setSelectedImageIds(new Set()); setSelectionAnchorId(null); setCurrentLoadedSessionName(name); setLoadedSessionNameForShare(name);
+    setSessionSearchTerm(''); setIsSessionListVisible(false); showAppNotification(`Session '${name}' created & loaded.`, 'success'); closeConfirmationModal();
+  }, [resetReferencesAndSessionState, showAppNotification, closeConfirmationModal]);
 
-  const filteredMockSessions = useMemo(() => {
-    if (!sessionSearchTerm.trim()) return mockSessions;
-    return mockSessions.filter(session =>
-      session.name.toLowerCase().includes(sessionSearchTerm.toLowerCase())
+  const handleCreateNewSession = useCallback((nameRaw: string) => {
+    const name = nameRaw.trim() || "Untitled Session";
+    const hasData = references.length > 0 || (currentLoadedSessionName && currentLoadedSessionName !== name);
+    if (hasData) openConfirmationModal("Confirm Create New Session", <><p>Creating '<strong>{name}</strong>' replaces current refs ({references.length}) & associations.</p><p className="mt-1">Files ({images.length}) remain.</p><p className="mt-2 font-semibold">Cannot be undone for current refs.</p><p className="mt-2">Proceed?</p></>, () => performCreateNewSession(name), "Create and Load");
+    else performCreateNewSession(name);
+  }, [images.length, references.length, currentLoadedSessionName, openConfirmationModal, performCreateNewSession]);
+
+  const sessionDisplayOptions = useMemo(() => {
+    const opts: SessionDisplayOption[] = []; const term = sessionSearchTerm.trim().toLowerCase();
+    const createName = `Create new session: "${sessionSearchTerm.trim() || "Untitled Session"}"`;
+    opts.push({ id: 'create_new_session', name: createName, isCreateOption: true });
+    const matched = sessions.filter(s => s.name !== currentLoadedSessionName && (term === '' || s.name.toLowerCase().includes(term))).map(s => ({ id: s.id, name: s.name, originalSessionId: s.id }));
+    if (term !== '' && matched.length === 0) return [opts[0]];
+    opts.push(...matched); return opts;
+  }, [sessionSearchTerm, sessions, currentLoadedSessionName]);
+
+  const loadFilesFromDirectoryHandle = useCallback(async (dirHandle: FileSystemDirectoryHandle | null) => {
+    if (!dirHandle) return; setIsLoadingDirectory(true); setImages([]);
+    const filesFromDir: File[] = [];
+    try {
+      for await (const entry of dirHandle.values()) if (entry.kind === 'file' && entry.name.match(/\.(jpe?g|png|gif|webp|svg)$/i)) filesFromDir.push(await entry.getFile());
+      const imgObjs = await processAndSetImageFiles(filesFromDir); setImages(imgObjs);
+      showAppNotification(`Folder '${dirHandle.name}' processed. ${imgObjs.length} images.`, 'success');
+    } catch (e: any) { console.error("Dir read error:", e); showAppNotification(`Error reading folder: ${e.message || 'Unknown'}. Try re-selecting.`, 'error'); if (e.name === 'NotAllowedError') handleStopFolderSync(false); }
+    finally { setIsLoadingDirectory(false); }
+  }, [processAndSetImageFiles, showAppNotification]);
+
+  const handleStartFolderSync = useCallback(async () => {
+    if (!browserSupportsFileSystemAccessAPI) { showAppNotification("Browser doesn't support File System Access API.", "error"); return; }
+    const doSync = async () => {
+      closeConfirmationModal();
+      try {
+        const handle = await window.showDirectoryPicker!(); if (!handle) return;
+        const perm = await handle.queryPermission({ mode: 'read' });
+        if (perm === 'granted' || (perm === 'prompt' && await handle.requestPermission({ mode: 'read' }) === 'granted')) {
+          clearAllDataForNewLoad(); setDirectoryHandle(handle); setSyncedFolderName(handle.name); setIsFolderSyncActive(true); loadFilesFromDirectoryHandle(handle);
+        } else showAppNotification("Folder read permission denied.", "error");
+      } catch (err: any) { if (err.name === 'AbortError') showAppNotification("Folder selection cancelled.", "success"); else { console.error("Dir select error:", err); showAppNotification("Could not select directory: " + err.message, "error"); } }
+    };
+    if (images.length || references.length || currentLoadedSessionName) openConfirmationModal("Confirm Folder Sync", <><p>Folder sync clears all current files ({images.length}), refs ({references.length}), & associations.</p><p className="mt-2 font-semibold">Cannot be undone.</p><p className="mt-2">Proceed?</p></>, doSync);
+    else doSync();
+  }, [browserSupportsFileSystemAccessAPI, images, references, currentLoadedSessionName, clearAllDataForNewLoad, loadFilesFromDirectoryHandle, showAppNotification, openConfirmationModal, closeConfirmationModal]);
+
+  const handleRefreshSyncedFolder = useCallback(async () => {
+    if (!directoryHandle) return;
+    try {
+      const perm = await directoryHandle.queryPermission({ mode: 'read' });
+      if (perm === 'granted' || (perm === 'prompt' && await directoryHandle.requestPermission({ mode: 'read' }) === 'granted')) {
+        showAppNotification(`Refreshing '${directoryHandle.name}'...`, 'success');
+        setImages(prev => prev.map(i => ({ ...i, associatedReferenceId: null }))); setSelectedImageIds(new Set()); setSelectionAnchorId(null);
+        setFilteringByReferenceDetail(null); setImageFilter(ImageFilterType.ALL); setReferenceImageOrder(new Map()); setRatingFilter(null);
+        loadFilesFromDirectoryHandle(directoryHandle);
+      } else showAppNotification("Folder read permission denied/revoked. Stop & restart sync.", "error");
+    } catch (e: any) { showAppNotification(`Refresh permission error: ${e.message}`, "error"); }
+  }, [directoryHandle, loadFilesFromDirectoryHandle, showAppNotification]);
+
+  const handleStopFolderSync = useCallback((confirm = true) => {
+    const doStop = () => { clearAllDataForNewLoad(); setDirectoryHandle(null); setIsFolderSyncActive(false); setSyncedFolderName(null); setIsLoadingDirectory(false); showAppNotification("Folder sync stopped.", 'success'); closeConfirmationModal(); };
+    if (confirm && (images.length || references.length)) openConfirmationModal("Confirm Stop Sync", <><p>Stopping sync clears files from '<strong>{syncedFolderName}</strong>' ({images.length}) & refs ({references.length}).</p><p className="mt-2">Stop syncing?</p></>, doStop);
+    else doStop();
+  }, [images, references, syncedFolderName, clearAllDataForNewLoad, showAppNotification, openConfirmationModal, closeConfirmationModal]);
+
+  const performActualUnload = useCallback(() => {
+    const nameUnloaded = currentLoadedSessionName || "current data";
+    setReferences([]); setCurrentLoadedSessionName(null); setLoadedSessionNameForShare(null);
+    setImages(prev => prev.map(i => i.associatedReferenceId ? { ...i, associatedReferenceId: null, lastModified: Date.now() } : i));
+    setReferenceImageOrder(new Map()); setFilteringByReferenceDetail(null); setImageFilter(ImageFilterType.ALL); setRatingFilter(null);
+    setSelectedImageIds(new Set()); setSelectionAnchorId(null); showAppNotification(`Session '${nameUnloaded}' & refs unloaded.`, 'success'); closeConfirmationModal();
+  }, [currentLoadedSessionName, showAppNotification, closeConfirmationModal]);
+
+  const handleUnloadSession = useCallback(() => {
+    if (!currentLoadedSessionName && !references.length && !images.some(i => i.associatedReferenceId)) { showAppNotification("Nothing to unload.", "success"); return; }
+    const assocCount = images.filter(i => i.associatedReferenceId).length;
+    const needsConfirm = references.length > 0 || assocCount > 0;
+    if (needsConfirm) openConfirmationModal("Confirm Unload Session", <><p>Unloading '<strong>{currentLoadedSessionName || 'current data'}</strong>' removes {references.length ? `refs (${references.length})` : 'any loaded refs'}{references.length && assocCount ? ' and ' : ''}{assocCount ? `clears ${assocCount} associations` : ''}.</p><p className="mt-1">Files ({images.length}) remain.</p><p className="mt-2 font-semibold">Cannot be undone for refs/associations.</p><p className="mt-2">Proceed?</p></>, performActualUnload, "Unload Session");
+    else performActualUnload();
+  }, [currentLoadedSessionName, references, images, performActualUnload, openConfirmationModal, showAppNotification]);
+
+  const handleApplyRatingToSelectedImages = useCallback((rating: number) => {
+    const newRating = rating < 0 ? 0 : rating > 5 ? 5 : rating; 
+    setImages(prevImgs =>
+      prevImgs.map(img =>
+        selectedImageIds.has(img.id)
+          ? { ...img, rating: newRating === 0 ? undefined : newRating } // Do not update lastModified here
+          : img
+      )
     );
-  }, [sessionSearchTerm]);
+    const message = newRating === 0 ? 'Ratings cleared for selected images.' : `Applied ${newRating}-star rating to selected images.`;
+    showAppNotification(message, 'success');
+  }, [selectedImageIds, showAppNotification]);
 
-  useEffect(() => {
-    const handleClickOutsideSessionList = (event: MouseEvent) => {
-      if (sessionLoadContainerRef.current && !sessionLoadContainerRef.current.contains(event.target as Node)) {
-        setIsSessionListVisible(false);
-      }
-    };
-
-    if (isSessionListVisible) {
-      document.addEventListener('mousedown', handleClickOutsideSessionList);
-    } else {
-      document.removeEventListener('mousedown', handleClickOutsideSessionList);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutsideSessionList);
-    };
-  }, [isSessionListVisible]);
-
-  useEffect(() => {
-    const handleClickOutsideActionsMenu = (event: MouseEvent) => {
-        if (
-            actionsMenuRef.current && !actionsMenuRef.current.contains(event.target as Node) &&
-            actionsButtonRef.current && !actionsButtonRef.current.contains(event.target as Node)
-        ) {
-            setIsActionsMenuOpen(false);
-        }
-    };
-
-    if (isActionsMenuOpen) {
-        document.addEventListener('mousedown', handleClickOutsideActionsMenu);
-    } else {
-        document.removeEventListener('mousedown', handleClickOutsideActionsMenu);
-    }
-
-    return () => {
-        document.removeEventListener('mousedown', handleClickOutsideActionsMenu);
-    };
-  }, [isActionsMenuOpen]);
-
-  useEffect(() => {
-    if (isReferenceInputAreaCollapsed) {
-      setIsSessionListVisible(false);
-    }
-  }, [isReferenceInputAreaCollapsed]);
-
-  const showAppNotification = useCallback((message: string, type: 'success' | 'error' = 'success') => {
-    setNotification({ message, type });
+  const handleDeselectAllImages = useCallback(() => {
+    setSelectedImageIds(new Set());
+    setSelectionAnchorId(null);
   }, []);
 
+  const commonRatingForSelected = useMemo(() => {
+    if (selectedImageIds.size === 0) return undefined;
+    let firstRating: number | undefined = undefined;
+    let isFirst = true;
+    let mixed = false;
+    for (const id of selectedImageIds) {
+      const img = imagesByIdMap.get(id);
+      if (img) {
+        const currentImgRating = img.rating === undefined ? 0 : img.rating; 
+        if (isFirst) {
+          firstRating = currentImgRating;
+          isFirst = false;
+        } else if (currentImgRating !== firstRating) {
+          mixed = true;
+          break;
+        }
+      }
+    }
+    return mixed ? -1 : (firstRating === undefined ? 0 : firstRating) ; 
+  }, [selectedImageIds, imagesByIdMap]);
+  
+  const showSelectionActionsBar = useMemo(() => {
+    return selectedImageIds.size > 0 && !isReorderEnabled && !isFolderSyncActive;
+  }, [selectedImageIds, isReorderEnabled, isFolderSyncActive]);
+
+  const handleImageCardSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setImageCardSize(Number(event.target.value));
+  };
+
+  const handleRatingFilterClick = useCallback((newRating: number | null) => {
+    setRatingFilter(prev => prev === newRating ? null : newRating);
+  }, []);
+
+  const resetAllGalleryFilters = useCallback(() => {
+    setImageFilter(ImageFilterType.ALL);
+    setRatingFilter(null);
+    setImageSortOrder(SortOrder.DESC);
+    setImageCardSize(DEFAULT_IMAGE_CARD_SIZE);
+    // Do not clear filteringByReferenceDetail here, as that's a separate contextual filter
+  }, []);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (imageFilter !== ImageFilterType.ALL && isReferencingModeActive) count++;
+    if (ratingFilter !== null) count++;
+    if (imageSortOrder !== SortOrder.DESC) count++;
+    // Card size is no longer counted as a filter in the badge
+    return count;
+  }, [imageFilter, ratingFilter, imageSortOrder, isReferencingModeActive]);
+
+  // Keyboard shortcuts for rating and navigation
   useEffect(() => {
-    if (notification) {
-      const timer = setTimeout(() => {
-        setNotification(null);
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [notification]);
-
-  const handleOpenShareModal = () => {
-    setIsShareModalOpen(true);
-    setIsActionsMenuOpen(false);
-  };
-
-  const handleCloseShareModal = () => {
-    setIsShareModalOpen(false);
-  };
-
-  const handleConfirmShare = async (sessionName: string, shareType: 'copyLink' | 'sendToRetouch', assignee?: string, step?: string) => {
-    if (shareType === 'copyLink') {
-      try {
-        await navigator.clipboard.writeText(window.location.href);
-        showAppNotification(`Link copied for session: ${sessionName}!`);
-      } catch (err) {
-        console.error('Failed to copy URL: ', err);
-        showAppNotification('Failed to copy URL.', 'error');
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isConfirmationModalOpen || isShareModalOpen) return;
+      
+      const activeElement = document.activeElement;
+      if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'SELECT')) {
+        return;
       }
-    } else if (shareType === 'sendToRetouch') {
-      if (step) { // Assignee is optional
-        console.log(`Sending session "${sessionName}" to ${assignee || 'Unassigned'} for retouch (Step: ${step}).`);
-        showAppNotification(`Session "${sessionName}" sent for step: ${step}${assignee ? ` to ${assignee}` : ''}.`);
-      } else {
-         showAppNotification('A step is required for sending to retouch.', 'error');
+
+      // Rating shortcuts (0-5)
+      if (showSelectionActionsBar) {
+        const key = event.key;
+        if (key >= '0' && key <= '5') {
+          event.preventDefault();
+          handleApplyRatingToSelectedImages(parseInt(key, 10));
+          return; 
+        }
+      }
+
+      // Arrow key navigation (Left/Right)
+      if (selectedImageIds.size === 1 && !isReorderEnabled && !isFolderSyncActive) {
+        const currentImageId = Array.from(selectedImageIds)[0];
+        const currentIndex = filteredAndSortedImages.findIndex(img => img.id === currentImageId);
+
+        if (currentIndex === -1) return; 
+
+        let nextIndex = -1;
+
+        if (event.key === 'ArrowRight') {
+          if (currentIndex < filteredAndSortedImages.length - 1) {
+            nextIndex = currentIndex + 1;
+          }
+        } else if (event.key === 'ArrowLeft') {
+          if (currentIndex > 0) {
+            nextIndex = currentIndex - 1;
+          }
+        }
+
+        if (nextIndex !== -1) {
+          event.preventDefault();
+          const nextImage = filteredAndSortedImages[nextIndex];
+          if (nextImage) {
+            setSelectedImageIds(new Set([nextImage.id]));
+            setSelectionAnchorId(nextImage.id);
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [
+      showSelectionActionsBar, 
+      handleApplyRatingToSelectedImages, 
+      isConfirmationModalOpen, 
+      isShareModalOpen,
+      selectedImageIds,
+      isReorderEnabled,
+      isFolderSyncActive,
+      filteredAndSortedImages, 
+  ]);
+
+  // Effect to scroll to selected image on keyboard navigation
+  useEffect(() => {
+    if (selectedImageIds.size === 1 && !isReorderEnabled && !isFolderSyncActive) {
+      const selectedImageId = Array.from(selectedImageIds)[0];
+      if (selectedImageId) {
+        requestAnimationFrame(() => {
+          const imageElement = document.getElementById(`image-card-${selectedImageId}`);
+          if (imageElement) {
+            imageElement.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center',
+              inline: 'nearest'
+            });
+          }
+        });
       }
     }
+  }, [selectedImageIds, filteredAndSortedImages, isReorderEnabled, isFolderSyncActive]);
+
+
+  useEffect(() => { const cb = (e: MouseEvent) => { if (sessionLoadContainerRef.current && !sessionLoadContainerRef.current.contains(e.target as Node)) setIsSessionListVisible(false); }; if (isSessionListVisible) document.addEventListener('mousedown', cb); else document.removeEventListener('mousedown', cb); return () => document.removeEventListener('mousedown', cb); }, [isSessionListVisible]);
+  useEffect(() => { const cb = (e: MouseEvent) => { if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node) && actionsButtonRef.current && !actionsButtonRef.current.contains(e.target as Node)) setIsActionsMenuOpen(false); }; if (isActionsMenuOpen) document.addEventListener('mousedown', cb); else document.removeEventListener('mousedown', cb); return () => document.removeEventListener('mousedown', cb); }, [isActionsMenuOpen]);
+  useEffect(() => { if (isReferenceInputAreaCollapsed) setIsSessionListVisible(false); }, [isReferenceInputAreaCollapsed]);
+  useEffect(() => { if (notification) { const t = setTimeout(() => setNotification(null), 3000); return () => clearTimeout(t); } }, [notification]);
+  useEffect(() => { if (!isReferencingModeActive && (imageFilter !== ImageFilterType.ALL || filteringByReferenceDetail)) { setImageFilter(ImageFilterType.ALL); setFilteringByReferenceDetail(null); setSelectedImageIds(new Set()); setSelectionAnchorId(null); } }, [isReferencingModeActive, imageFilter, filteringByReferenceDetail]);
+  
+  useEffect(() => {
+    const handleClickOutsideFilterPanel = (event: MouseEvent) => {
+      if (
+        filterPanelRef.current &&
+        !filterPanelRef.current.contains(event.target as Node) &&
+        filterPanelButtonRef.current &&
+        !filterPanelButtonRef.current.contains(event.target as Node)
+      ) {
+        setIsFilterPanelOpen(false);
+      }
+    };
+    if (isFilterPanelOpen) document.addEventListener('mousedown', handleClickOutsideFilterPanel);
+    else document.removeEventListener('mousedown', handleClickOutsideFilterPanel);
+    return () => document.removeEventListener('mousedown', handleClickOutsideFilterPanel);
+  }, [isFilterPanelOpen]);
+
+  const handleOpenShareModal = () => { setIsShareModalOpen(true); setIsActionsMenuOpen(false); };
+  const handleCloseShareModal = () => setIsShareModalOpen(false);
+  const handleConfirmShare = async (name: string, type: 'copyLink' | 'sendToRetouch', assignee?: string, step?: string) => {
+    const shareName = name.trim() || (isFolderSyncActive && syncedFolderName ? `Folder: ${syncedFolderName}` : "Untitled Session");
+    if (type === 'copyLink') try { await navigator.clipboard.writeText(window.location.href); showAppNotification(`Link copied for: ${shareName}!`); } catch (err) { console.error('Copy URL fail:', err); showAppNotification('Failed to copy URL.', 'error'); }
+    else if (type === 'sendToRetouch') { if (step) { console.log(`Sending "${shareName}" to ${assignee || 'Unassigned'} for retouch (Step: ${step}).`); showAppNotification(`Session "${shareName}" sent for ${step}${assignee ? ` to ${assignee}` : ''}.`); } else showAppNotification('Step required for retouch.', 'error'); }
     handleCloseShareModal();
   };
-
   const showReferencesPanelFull = isReferencingModeActive && !isReferencesPanelCollapsed;
 
-  useEffect(() => {
-    if (!isReferencingModeActive) {
-        if (imageFilter !== ImageFilterType.ALL || filteringByReferenceDetail) {
-            setImageFilter(ImageFilterType.ALL);
-            setFilteringByReferenceDetail(null);
-            setSelectedImageIds(new Set());
-            setSelectionAnchorId(null);
-        }
-    }
-  }, [isReferencingModeActive]);
-
-
-  if (showDropZoneOverlay) {
-    return (
-      <div className="fixed inset-0 bg-blue-600 bg-opacity-90 flex items-center justify-center z-[9999] p-4">
-        <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white animate-pulse text-center">
-          {currentDropPhrase}
-        </h1>
-      </div>
-    );
-  }
+  if (showDropZoneOverlay && !isFolderSyncActive) return <div className="fixed inset-0 bg-blue-600 bg-opacity-90 flex items-center justify-center z-[9999] p-4"><h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white animate-pulse text-center">{currentDropPhrase}</h1></div>;
 
   return (
     <div className="min-h-screen flex flex-col text-gray-800 bg-white">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="container mx-auto px-4 py-3 flex justify-between items-center">
           <h1 className="text-xl font-semibold text-gray-800">Drop Flow</h1>
-          <div className="relative">
-            <button
-              id="actions-button"
-              ref={actionsButtonRef}
-              onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
-              className="flex items-center bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 px-4 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-opacity-50 text-sm"
-              aria-haspopup="true"
-              aria-expanded={isActionsMenuOpen}
-              aria-controls="actions-menu"
-              title="Open actions menu"
-            >
-              Actions
-              <ChevronDownIcon className={`w-4 h-4 ml-2 transition-transform duration-200 ${isActionsMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isActionsMenuOpen && (
-              <div
-                id="actions-menu"
-                ref={actionsMenuRef}
-                className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-sm border border-gray-200 py-1 z-50"
-                role="menu"
-                aria-orientation="vertical"
-                aria-labelledby="actions-button"
-              >
-                <button
-                  onClick={handleOpenShareModal}
-                  className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus:bg-gray-100 focus:outline-none"
-                  role="menuitem"
-                  title="Share this session"
-                >
-                  <ArrowUpOnSquareIcon className="w-4 h-4 mr-3 text-gray-500" />
-                  Share
-                </button>
-                <button
-                  onClick={() => { console.log('Publish clicked'); setIsActionsMenuOpen(false); showAppNotification('Publish action triggered (dev).') }}
-                  disabled={!areAnyImagesAssociated}
-                  className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus:bg-gray-100 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                  role="menuitem"
-                  title={!areAnyImagesAssociated ? "Associate files to references to enable Publish" : "Publish content"}
-                >
-                  <CloudArrowUpIcon className="w-4 h-4 mr-3 text-gray-500" />
-                  Publish
-                </button>
-                <div role="separator" className="my-1 h-px bg-gray-200"></div>
-                <button
-                  onClick={() => {
-                    const newModeActive = !isReferencingModeActive;
-                    setIsReferencingModeActive(newModeActive);
-                    if (!newModeActive) { 
-                      setIsReferencesPanelCollapsed(false); 
-                    }
-                    setIsActionsMenuOpen(false);
-                  }}
-                  className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus:bg-gray-100 focus:outline-none"
-                  role="menuitem"
-                  title={isReferencingModeActive ? "Deactivate Referencing Mode" : "Activate Referencing Mode"}
-                >
-                  <LinkIcon className="w-4 h-4 mr-3 text-gray-500" />
-                  {isReferencingModeActive ? "Deactivate Referencing" : "Activate Referencing"}
-                </button>
-              </div>
-            )}
+          <div className="flex items-center space-x-3">
+             {!isFolderSyncActive && browserSupportsFileSystemAccessAPI && (<button onClick={handleStartFolderSync} className="flex items-center bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-opacity-50 text-sm" title="Synchronize local folder (experimental)"><DocumentDuplicateIcon className="w-4 h-4 mr-2" />Sync Folder</button>)}
+            {isFolderSyncActive && (<>
+                <button onClick={handleRefreshSyncedFolder} disabled={isLoadingDirectory} className="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-sm disabled:bg-blue-300" title="Refresh synced folder"><ArrowPathIcon className={`w-4 h-4 mr-2 ${isLoadingDirectory ? 'animate-spin' : ''}`} />Refresh</button>
+                <button onClick={() => handleStopFolderSync()} disabled={isLoadingDirectory} className="flex items-center bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 text-sm disabled:bg-red-300" title="Stop folder sync"><StopCircleIcon className="w-4 h-4 mr-2" />Stop Sync</button>
+            </>)}
+            <div className="relative">
+                <button id="actions-button" ref={actionsButtonRef} onClick={() => setIsActionsMenuOpen(o => !o)} className="flex items-center bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 px-4 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-opacity-50 text-sm" aria-haspopup="true" aria-expanded={isActionsMenuOpen} aria-controls="actions-menu" title="Open actions menu">Actions <ChevronDownIcon className={`w-4 h-4 ml-2 transition-transform duration-200 ${isActionsMenuOpen ? 'rotate-180' : ''}`} /></button>
+                {isActionsMenuOpen && (<div id="actions-menu" ref={actionsMenuRef} className="absolute right-0 mt-2 w-56 bg-white shadow-sm border border-gray-200 py-1 z-50" role="menu" aria-orientation="vertical" aria-labelledby="actions-button">
+                    <button onClick={handleOpenShareModal} className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus:bg-gray-100 focus:outline-none" role="menuitem" title="Share session/folder"><ArrowUpOnSquareIcon className="w-4 h-4 mr-3 text-gray-500" />Share</button>
+                    <button onClick={() => { setIsActionsMenuOpen(false); showAppNotification('Publish triggered (dev).') }} disabled={!areAnyImagesAssociated} className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus:bg-gray-100 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed" role="menuitem" title={!areAnyImagesAssociated ? "Associate files to enable Publish" : "Publish content"}><CloudArrowUpIcon className="w-4 h-4 mr-3 text-gray-500" />Publish</button>
+                    <div role="separator" className="my-1 h-px bg-gray-200"></div>
+                    <button onClick={() => { setIsReferencingModeActive(o => !o); if (isReferencingModeActive) setIsReferencesPanelCollapsed(false); setIsActionsMenuOpen(false); }} className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 focus:bg-gray-100 focus:outline-none" role="menuitem" title={isReferencingModeActive ? "Deactivate Referencing" : "Activate Referencing"}><LinkIcon className="w-4 h-4 mr-3 text-gray-500" />{isReferencingModeActive ? "Deactivate Referencing" : "Activate Referencing"}</button>
+                </div>)}
+            </div>
           </div>
         </div>
       </header>
-      
+
       <main className="flex-grow flex flex-col md:flex-row p-4 gap-4">
         <section className={`flex flex-col transition-all duration-300 ease-in-out ${showReferencesPanelFull ? 'md:w-2/3' : 'w-full'}`}>
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-800">
-              File Gallery
-            </h2>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={handleUploadButtonClick}
-                className="flex items-center bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 px-3 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-opacity-50 text-sm"
-                title="Upload files"
-              >
-                <UploadIcon className="w-4 h-4 mr-2" />
-                Upload Files
-              </button>
-            </div>
-          </div>
-          <input 
-            type="file" 
-            multiple 
-            ref={fileInputRef} 
-            onChange={handleFileInputChange} 
-            className="hidden" 
-            id="hidden-file-input"
-            aria-hidden="true"
-          />
           
-          <div className="space-y-3">
-             {showGallerySubtitle && (
-              <div>
-                  <h3 className="text-lg font-medium text-gray-700">
-                    {getCurrentViewTitle()} ({filteredAndSortedImages.length})
-                    {!isReorderEnabled && selectedImageIds.size > 0 && 
-                      ` - ${selectedImageIds.size} selected (${
-                        // Count how many of the globally selected IDs are visible in the current (potentially grouped) view
-                        Array.from(selectedImageIds).filter(id => 
-                          groupedImagesForDisplay.some(group => group.images.some(img => img.id === id))
-                        ).length
-                      } visible)`
-                    }
-                  </h3>
-                  {isReorderEnabled && (
-                      <p className="text-xs text-blue-600">Drag & drop to reorder files for this reference.</p>
-                  )}
-                </div>
-             )}
-           
-            <div className="flex items-center space-x-2 pt-1 flex-wrap">
-              {showReferencesPanelFull && (
-                <>
-                  <span className="text-sm font-medium text-gray-600 whitespace-nowrap mr-2">Filter by status:</span>
-                  <FilterButtonComponent label="All" type={ImageFilterType.ALL} currentFilter={imageFilter} onClick={handleMainFilterChange} />
-                  <FilterButtonComponent 
-                    label="Associated" 
-                    type={ImageFilterType.ASSOCIATED} 
-                    currentFilter={imageFilter} 
-                    onClick={handleMainFilterChange}
-                    isActive={imageFilter === ImageFilterType.ASSOCIATED} 
-                  />
-                  <FilterButtonComponent label="Unassociated" type={ImageFilterType.UNASSOCIATED} currentFilter={imageFilter} onClick={handleMainFilterChange} />
-                  {filteringByReferenceDetail && imageFilter === ImageFilterType.ASSOCIATED && (
-                    <button 
-                      onClick={() => {
-                          setFilteringByReferenceDetail(null); 
-                           // After clearing specific ref filter, remain on "Associated" if there are any associated items.
-                           // Or switch to "All" if no associated items left / preferred.
-                           if (images.some(img => img.associatedReferenceId)) {
-                               setImageFilter(ImageFilterType.ASSOCIATED);
-                           } else {
-                               setImageFilter(ImageFilterType.ALL);
-                           }
-                      }}
-                      className="ml-2 flex items-center px-2 py-1 text-xs rounded-md transition-colors bg-red-100 hover:bg-red-200 text-red-700 focus:outline-none focus:ring-2 focus:ring-red-300 focus:ring-opacity-50"
-                      title={`Clear filter for '${filteringByReferenceDetail.text}' and show all associated files`}
-                    >
-                      <XCircleIcon className="w-4 h-4 mr-1"/>
-                      <span className="truncate max-w-xs">Clear: {filteringByReferenceDetail.text}</span>
-                    </button>
-                  )}
-                </>
-              )}
-               {images.length > 0 && (
-                <div className="ml-auto"> 
-                    <button
-                    onClick={toggleSortOrder}
-                    className={`flex items-center px-3 py-1.5 text-sm rounded-md transition-colors h-fit
-                                ${isReorderEnabled ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-70' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-                    title={isReorderEnabled ? "Custom order active; date sort applies to un-ordered items or other views" : `Sort by date ${imageSortOrder === SortOrder.DESC ? 'oldest first' : 'newest first'}`}
-                    disabled={isReorderEnabled}
-                    aria-disabled={isReorderEnabled}
-                    >
-                    {imageSortOrder === SortOrder.DESC ? <SortDescIcon className="mr-1.5 w-4 h-4"/> : <SortAscIcon className="mr-1.5 w-4 h-4" />}
-                    Date ({imageSortOrder === SortOrder.DESC ? 'Newest' : 'Oldest'})
-                    </button>
-                </div>
-               )}
-            </div>
-          </div>
-          
-          <hr className="border-t border-gray-200 my-4" />
-
-          {groupedImagesForDisplay.length === 0 ? (
-            <p className="text-center text-gray-500 py-8 flex-grow flex items-center justify-center">
-              {images.length > 0 
-                ? (filteringByReferenceDetail 
-                    ? `No files found for reference: "${filteringByReferenceDetail.text}".` 
-                    : (isReferencingModeActive && !isReferencesPanelCollapsed && imageFilter !== ImageFilterType.ALL)
-                        ? 'No files match the current status filter.'
-                        : 'No files found for the current view.'
-                  )
-                : 'No files uploaded yet. Click "Upload Files" or drag and drop files onto the page.'
-              }
-            </p>
-          ) : (
-            <div>
-              {groupedImagesForDisplay.map((group, groupIndex) => (
-                <div 
-                  key={group.key} 
-                  className={`${groupIndex > 0 && group.isUnassociatedGroup ? "mt-6 pt-2" : "" } 
-                              ${groupIndex > 0 && !group.isUnassociatedGroup && group.reference && !groupedImagesForDisplay[groupIndex-1].isUnassociatedGroup ? "" : ""}`}
-                >
-                  {group.reference && !filteringByReferenceDetail && (
-                    <h4 className="text-md font-semibold text-gray-700 mb-3 bg-gray-50 py-1.5 px-2 rounded-md">
-                      Reference: {group.reference.text} ({group.images.length})
-                    </h4>
-                  )}
-                  <div className="flex flex-wrap justify-left gap-4 py-2"> 
-                    {group.images.map(image => (
-                      <div key={image.id} className="relative group">
-                        <ImageGridItem
-                          image={image}
-                          isSelected={!isReorderEnabled && selectedImageIds.has(image.id)}
-                          associatedReference={image.associatedReferenceId ? referenceMap.get(image.associatedReferenceId) ?? null : null}
-                          onSelect={handleImageSelect} 
-                          onUnassociate={handleUnassociateImage}
-                          isDraggable={isReorderEnabled}
-                          draggedImageId={draggedImageId}
-                          onDragStartImage={handleImageDragStart}
-                          onDropOnImage={handleImageDrop}
-                          onActualDragEnd={handleActualDragEndFromItem}
-                        />
-                        {!isReorderEnabled && 
+          <div ref={imageGalleryScrollContainerRef} className="flex-grow overflow-y-auto min-h-0"> {/* Scrollable area for gallery header and images */}
+            {/* File Gallery Header - Now part of the scrollable content */}
+            <div className="bg-white border-b border-gray-200 pb-3"> 
+              <div className="flex justify-between items-center mb-1 pt-2">
+                <h2 className="text-xl font-semibold text-gray-800">File Gallery</h2>
+                <div className="flex items-center space-x-2">
+                    {images.length > 0 && (
+                      <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-1.5">
+                          <label htmlFor="imageCardSizeSlider" className="text-sm text-gray-600 whitespace-nowrap">Size: <span className="font-semibold">{imageCardSize}px</span></label>
+                          <input
+                            type="range"
+                            id="imageCardSizeSlider"
+                            min="120"
+                            max="500" 
+                            step="10"
+                            value={imageCardSize}
+                            onChange={handleImageCardSizeChange}
+                            className="w-24 h-2 bg-gray-200 appearance-none cursor-pointer accent-slate-600 disabled:opacity-50"
+                            title={`Adjust preview card size: ${imageCardSize}px`}
+                            disabled={isLoadingDirectory}
+                          />
+                        </div>
+                        <div className="relative">
                           <button 
-                            onClick={() => handleDeleteImage(image.id)}
-                            className="absolute top-1.5 left-1.5 bg-red-600 hover:bg-red-700 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100 focus:ring-2 focus:ring-offset-1 focus:ring-red-500 z-20"
-                            title="Delete file"
-                            aria-label={`Delete file ${image.name}`}
+                              ref={filterPanelButtonRef}
+                              onClick={() => setIsFilterPanelOpen(o => !o)}
+                              className="flex items-center bg-white hover:bg-gray-50 text-gray-700 font-medium py-2 px-3 transition-colors border border-gray-300 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-opacity-50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Filter and sort options"
+                              aria-haspopup="true"
+                              aria-expanded={isFilterPanelOpen}
+                              aria-controls="filter-sort-panel"
+                              disabled={isLoadingDirectory}
                           >
-                            <TrashIcon className="w-4 h-4" />
+                              <AdjustmentsHorizontalIcon className="w-4 h-4 mr-2" />
+                              Filters
+                              {activeFilterCount > 0 && (
+                                  <span className="ml-2 bg-slate-600 text-white text-xs font-semibold px-1.5 py-0.5">
+                                      {activeFilterCount}
+                                  </span>
+                              )}
                           </button>
-                        }
+                          {isFilterPanelOpen && (
+                              <div ref={filterPanelRef} id="filter-sort-panel">
+                                  <FilterPanel
+                                      isOpen={isFilterPanelOpen}
+                                      onClose={() => setIsFilterPanelOpen(false)}
+                                      currentStatusFilter={imageFilter}
+                                      onStatusFilterChange={handleMainFilterChange}
+                                      currentRatingFilter={ratingFilter}
+                                      onRatingFilterChange={handleRatingFilterClick}
+                                      currentSortOrder={imageSortOrder}
+                                      onSortOrderChange={toggleSortOrder}
+                                      onResetFilters={resetAllGalleryFilters}
+                                      imageFilterTypeDisplayNames={IMAGE_FILTER_TYPE_DISPLAY_NAMES}
+                                      sortOrderEnum={SortOrder}
+                                      isLoading={isLoadingDirectory}
+                                      isReorderActive={isReorderEnabled}
+                                      isReferencingModeActive={isReferencingModeActive}
+                                      imageFilterEnum={ImageFilterType}
+                                  />
+                              </div>
+                          )}
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                  
-                  {/* Separator logic: Add after an associated group if it's not the absolute last group in the display */}
-                  {!group.isUnassociatedGroup && 
-                   !filteringByReferenceDetail && 
-                   groupIndex < groupedImagesForDisplay.length - 1 && (
-                    <hr className="my-6 border-t-2 border-gray-200" />
-                  )}
+                    )}
+                    {!isFolderSyncActive && (
+                        <button onClick={handleUploadButtonClick} className="flex items-center bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-opacity-50 text-sm" title="Upload files">
+                            <UploadIcon className="w-4 h-4 mr-2" />Upload Files
+                        </button>
+                    )}
                 </div>
-              ))}
+              </div>
+              {!isFolderSyncActive && (<input type="file" multiple ref={fileInputRef} onChange={handleFileInputChange} className="hidden" id="hidden-file-input" aria-hidden="true"/>)}
+              
+              <div className="space-y-1 mt-3"> 
+                {showGallerySubtitle && (
+                    <div>
+                        <h3 className="text-lg font-medium text-gray-700 flex items-center flex-wrap">
+                            <span>{getCurrentViewTitle()} ({filteredAndSortedImages.length})</span>
+                            {filteringByReferenceDetail && imageFilter === ImageFilterType.ASSOCIATED && (
+                                <button
+                                    onClick={() => {
+                                    setFilteringByReferenceDetail(null);
+                                    setImageFilter(images.some(i => i.associatedReferenceId) ? ImageFilterType.ASSOCIATED : ImageFilterType.ALL);
+                                    }}
+                                    className="ml-2 p-0.5 hover:bg-red-100 text-red-600 hover:text-red-700 focus:outline-none focus:ring-1 focus:ring-red-300 disabled:opacity-50"
+                                    title={`Clear filter for '${filteringByReferenceDetail.text}'`}
+                                    disabled={isLoadingDirectory}
+                                    aria-label={`Clear filter for reference ${filteringByReferenceDetail.text}`}
+                                >
+                                    <XCircleIcon className="w-4 h-4" />
+                                </button>
+                            )}
+                            <span className="ml-1 text-lg font-medium text-gray-700">
+                              {!isReorderEnabled && selectedImageIds.size > 0 && ` - ${selectedImageIds.size} selected (${groupedImagesForDisplay.flatMap(g => g.images).filter(i => selectedImageIds.has(i.id)).length} visible)`}
+                            </span>
+                        </h3>
+                        {isReorderEnabled && (<p className="text-xs text-blue-600">Drag & drop to reorder files for this reference.</p>)}
+                        {isFolderSyncActive && (<p className="text-xs text-teal-600">Displaying from: <strong>{syncedFolderName}</strong>.{isLoadingDirectory ? ' Refreshing...' : ' Click "Refresh" for external changes.'}</p>)}
+                    </div>
+                )}
+              </div>
+            </div>
+            {/* End File Gallery Header */}
+          
+            {/* Image Grid Content */}
+            {isLoadingDirectory && images.length === 0 && (<p className="text-center text-gray-500 py-8 flex-grow flex items-center justify-center">Loading files from '{syncedFolderName}'...</p>)}
+            {!isLoadingDirectory && groupedImagesForDisplay.length === 0 ? (<p className="text-center text-gray-500 py-8 flex-grow flex items-center justify-center">{images.length ? (filteringByReferenceDetail ? `No files for ref: "${filteringByReferenceDetail.text}".` : (isReferencingModeActive && !isReferencesPanelCollapsed && imageFilter !== ImageFilterType.ALL) ? 'No files match filter.' : (ratingFilter !== null ? `No files match ${ratingFilter === 0 ? 'Not Rated' : `${ratingFilter}-star`} filter.` : 'No files for current view.')) : (isFolderSyncActive ? `No images in '${syncedFolderName}' or empty. Add files & refresh.` : 'No files. Upload or drag & drop.')}</p>)
+            : (<div className={`${isLoadingDirectory ? 'opacity-50' : ''} pt-4`}>
+                {groupedImagesForDisplay.map((group, idx) => (<div key={group.key} className={`${idx > 0 && group.isUnassociatedGroup ? "mt-6 pt-2" : ""} ${idx > 0 && !group.isUnassociatedGroup && group.reference && !groupedImagesForDisplay[idx-1].isUnassociatedGroup ? "" : ""}`}>
+                    {group.reference && !filteringByReferenceDetail && (<h4 className="text-md font-semibold text-gray-700 mb-3 bg-gray-50 py-1.5 px-2">Reference: {group.reference.text} ({group.images.length})</h4>)}
+                    <div className="flex flex-wrap justify-start gap-4 py-2">
+                      {group.images.map(image => (<div key={image.id} className="relative group">
+                          <ImageGridItem 
+                              image={image} 
+                              isSelected={!isReorderEnabled && selectedImageIds.has(image.id)} 
+                              associatedReference={image.associatedReferenceId ? referenceMap.get(image.associatedReferenceId) ?? null : null} 
+                              onSelect={handleImageSelect} 
+                              onUnassociate={handleUnassociateImage} 
+                              isDraggable={isReorderEnabled} 
+                              draggedImageId={draggedImageId} 
+                              onDragStartImage={handleImageDragStart} 
+                              onDropOnImage={handleImageDrop} 
+                              onActualDragEnd={handleActualDragEndFromItem}
+                              cardWidth={imageCardSize}
+                          />
+                          {!isReorderEnabled && !isFolderSyncActive && <button onClick={() => handleDeleteImage(image.id)} className="absolute top-1.5 left-1.5 bg-red-600 hover:bg-red-700 text-white p-1 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100 focus:ring-2 focus:ring-offset-1 focus:ring-red-500 z-20" title="Delete file" aria-label={`Delete file ${image.name}`}><TrashIcon className="w-4 h-4" /></button>}
+                        </div>))}
+                    </div>
+                    {!group.isUnassociatedGroup && !filteringByReferenceDetail && idx < groupedImagesForDisplay.length - 1 && (<hr className="my-6 border-t-2 border-gray-200" />)}
+                  </div>))}
+              </div>)}
+          </div> {/* End scrollable area */}
+          
+          {showSelectionActionsBar && (
+            <div className="sticky bottom-0 bg-slate-800 text-white p-2 md:p-3 shadow-md-top z-10 flex items-center justify-between space-x-2 md:space-x-4 border-t border-slate-700 shrink-0">
+              <span className="text-sm font-medium px-2 whitespace-nowrap">
+                {selectedImageIds.size} item{selectedImageIds.size === 1 ? '' : 's'} selected
+              </span>
+              <div className="flex items-center space-x-1 md:space-x-2">
+                {[1, 2, 3, 4, 5].map(starValue => (
+                  <button
+                    key={starValue}
+                    onClick={() => handleApplyRatingToSelectedImages(starValue)}
+                    onMouseEnter={() => setHoveredRatingInBar(starValue)}
+                    onMouseLeave={() => setHoveredRatingInBar(0)}
+                    className="p-1 hover:bg-slate-700 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                    title={`Rate ${starValue} star${starValue === 1 ? '' : 's'}`}
+                    aria-label={`Apply ${starValue} star rating`}
+                  >
+                    {(hoveredRatingInBar > 0 ? hoveredRatingInBar >= starValue : (commonRatingForSelected !== -1 && (commonRatingForSelected || 0) >= starValue))
+                      ? <StarIconFilled className="w-5 h-5 md:w-6 md:h-6 text-yellow-400" />
+                      : <StarIconOutline className="w-5 h-5 md:w-6 md:h-6 text-slate-400 hover:text-yellow-500" />
+                    }
+                  </button>
+                ))}
+                <button
+                  onClick={() => handleApplyRatingToSelectedImages(0)}
+                  className="p-1.5 ml-1 md:ml-2 hover:bg-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  title="Clear rating for selected (0)"
+                  aria-label="Clear rating for selected items"
+                >
+                  <NoSymbolIcon className="w-4 h-4 md:w-5 md:h-5 text-slate-300 hover:text-white" />
+                </button>
+              </div>
+              <button
+                onClick={handleDeselectAllImages}
+                className="text-sm bg-slate-600 hover:bg-slate-500 px-3 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400 whitespace-nowrap"
+                title="Deselect all items"
+              >
+                Deselect All
+              </button>
             </div>
           )}
         </section>
 
-        <section
-          id="references-panel"
-          className={`md:sticky md:top-20 md:h-[calc(100vh-8rem)] transition-all duration-300 ease-in-out flex flex-col bg-white
-                      ${isReferencingModeActive
-                          ? (isReferencesPanelCollapsed
-                              ? 'md:w-[52px] p-3 md:border-l md:border-gray-200' 
-                              : 'md:w-1/3 p-4 md:pl-6 md:border-l md:border-gray-200') 
-                          : 'md:w-0 p-0 border-none opacity-0 pointer-events-none overflow-hidden' 
-                      }`}
-          aria-hidden={!isReferencingModeActive}
-        >
-          {isReferencingModeActive && (
-            <>
+        <section id="references-panel" className={`md:sticky md:top-20 md:h-[calc(100vh-8rem)] transition-all duration-300 ease-in-out flex flex-col bg-white ${isReferencingModeActive ? (isReferencesPanelCollapsed ? 'md:w-[52px] p-3 md:border-l md:border-gray-200' : 'md:w-1/3 p-4 md:pl-6 md:border-l md:border-gray-200') : 'md:w-0 p-0 border-none opacity-0 pointer-events-none overflow-hidden'}`} aria-hidden={!isReferencingModeActive}>
+          {isReferencingModeActive && (<>
               <div className={`flex justify-between items-center mb-4 ${isReferencesPanelCollapsed ? 'hidden' : ''}`}>
                 <h2 className="text-xl font-semibold text-gray-800">References</h2>
                 <div className="flex items-center space-x-1">
-                    <button 
-                        onClick={() => setIsReferencesPanelCollapsed(true)}
-                        className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300"
-                        title="Collapse References Panel"
-                        aria-expanded="true"
-                        aria-controls="references-panel-content"
-                    >
-                        <ChevronDoubleRightIcon className="w-5 h-5" />
-                    </button>
-                    <button 
-                        onClick={() => {
-                        setIsReferencingModeActive(false);
-                        setIsReferencesPanelCollapsed(false); 
-                        }}
-                        className="p-1.5 rounded-full hover:bg-red-100 text-red-500 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-300"
-                        title="Close References Panel (Exit Referencing Mode)"
-                    >
-                        <XMarkIcon className="w-5 h-5" />
-                    </button>
+                    <button onClick={() => setIsReferencesPanelCollapsed(true)} className="p-1.5 hover:bg-gray-100 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300" title="Collapse References" aria-expanded="true" aria-controls="references-panel-content"><ChevronDoubleRightIcon className="w-5 h-5" /></button>
+                    <button onClick={() => { setIsReferencingModeActive(false); setIsReferencesPanelCollapsed(false); }} className="p-1.5 hover:bg-red-100 text-red-500 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-300" title="Close References (Exit Mode)"><XMarkIcon className="w-5 h-5" /></button>
                 </div>
               </div>
-
-              {isReferencesPanelCollapsed && (
-                <div className="flex justify-center items-center h-full">
-                    <button
-                        onClick={() => setIsReferencesPanelCollapsed(false)}
-                        className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300"
-                        title="Show References Panel"
-                        aria-expanded="false"
-                        aria-controls="references-panel-content"
-                    >
-                        <ChevronDoubleLeftIcon className="w-6 h-6" />
-                    </button>
-                </div>
-              )}
-
+              {isReferencesPanelCollapsed && (<div className="flex justify-center items-center h-full"><button onClick={() => setIsReferencesPanelCollapsed(false)} className="p-1.5 hover:bg-gray-100 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300" title="Show References" aria-expanded="false" aria-controls="references-panel-content"><ChevronDoubleLeftIcon className="w-6 h-6" /></button></div>)}
               <div id="references-panel-content" className={`flex-grow flex flex-col min-h-0 overflow-y-auto ${isReferencesPanelCollapsed ? 'hidden' : ''}`}>
-                  <div className="mb-4"> 
-                      <div className="flex justify-between items-center mb-2">
-                          <h3 className="text-sm font-semibold text-gray-700">
-                              {referenceAddMode === 'manual' ? 'Add References Manually' : 'Load References from Session'}
-                          </h3>
-                          <button
-                              onClick={() => setIsReferenceInputAreaCollapsed(!isReferenceInputAreaCollapsed)}
-                              className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
-                              title={isReferenceInputAreaCollapsed ? 'Show input area' : 'Hide input area'}
-                              aria-expanded={!isReferenceInputAreaCollapsed}
-                              aria-controls="reference-input-collapsible-area"
-                          >
-                              {isReferenceInputAreaCollapsed ? <ChevronDownIcon className="w-5 h-5" /> : <ChevronUpIcon className="w-5 h-5" />}
-                          </button>
-                      </div>
-                      <div
-                          id="reference-input-collapsible-area"
-                          className={`transition-all duration-300 ease-in-out ${
-                              isReferenceInputAreaCollapsed 
-                                ? 'max-h-0 opacity-0 overflow-hidden' 
-                                : 'max-h-[500px] opacity-100 overflow-visible' 
-                          }`}
-                      >
-                          {referenceAddMode === 'manual' && (
-                          <div>
-                              <div className="mb-3">
-                              <textarea
-                                  id="reference-input"
-                                  rows={2}
-                                  value={referenceInput}
-                                  onChange={handleReferenceInputChange}
-                                  placeholder="e.g., Ref001, Item ABC, Project X"
-                                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                              />
-                              <button
-                                  onClick={handleAddReferencesFromInput}
-                                  className="mt-2 w-full bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 px-3 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-opacity-50 text-sm"
-                              >
-                                  Add Manually
-                              </button>
-                              </div>
-                              <div className="my-3 flex items-center">
-                              <hr className="flex-grow border-t border-gray-300" />
-                              <span className="mx-3 text-xs text-gray-400 font-medium">OR</span>
-                              <hr className="flex-grow border-t border-gray-300" />
-                              </div>
-                              <button
-                              onClick={() => {
-                                  setReferenceAddMode('session');
-                                  setReferenceInput(''); 
-                                  setLoadedSessionNameForShare(null);
-                              }}
-                              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-3 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50 text-sm border border-gray-300"
-                              >
-                              Switch to Load from Session
-                              </button>
-                          </div>
-                          )}
-
-                          {referenceAddMode === 'session' && (
-                          <div ref={sessionLoadContainerRef}>
-                              <div className="mb-3 relative">
-                              <input
-                                  type="text"
-                                  id="session-search-input"
-                                  placeholder="Search sessions..."
-                                  value={sessionSearchTerm}
-                                  onChange={handleSessionSearchChange}
-                                  onFocus={() => !isReferenceInputAreaCollapsed && setIsSessionListVisible(true)}
-                                  onClick={() => !isReferenceInputAreaCollapsed && setIsSessionListVisible(true)}
-                                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm mb-2"
-                                  aria-haspopup="listbox"
-                                  aria-expanded={isSessionListVisible && !isReferenceInputAreaCollapsed}
-                                  disabled={isReferenceInputAreaCollapsed}
-                              />
-                              {isSessionListVisible && !isReferenceInputAreaCollapsed && mockSessions.length > 0 && (
-                                  <div 
-                                  className="absolute z-10 w-full mt-1 max-h-96 overflow-y-auto border border-gray-300 rounded-md bg-white shadow-sm p-1 space-y-1"
-                                  role="listbox"
-                                  id="session-listbox"
-                                  >
-                                  {filteredMockSessions.length > 0 ? (
-                                      filteredMockSessions.map(session => (
-                                      <button
-                                          key={session.id}
-                                          role="option"
-                                          onClick={() => handleLoadSessionFromListItem(session.id)}
-                                          disabled={isReferenceInputAreaCollapsed}
-                                          className={`w-full text-left p-1.5 rounded-md text-sm transition-colors text-gray-700 hover:bg-blue-50
-                                                      disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent`}
-                                          title={`Load session: ${session.name}`}
-                                      >
-                                          {session.name}
-                                      </button>
-                                      ))
-                                  ) : (
-                                      <p className="p-1.5 text-sm text-gray-500 text-center">No sessions match your search.</p>
-                                  )}
-                                  </div>
-                              )}
-                              </div>
-                              <div className="my-3 flex items-center">
-                              <hr className="flex-grow border-t border-gray-300" />
-                              <span className="mx-3 text-xs text-gray-400 font-medium">OR</span>
-                              <hr className="flex-grow border-t border-gray-300" />
-                              </div>
-                              <button
-                              onClick={() => {
-                                  setReferenceAddMode('manual');
-                                  setSessionSearchTerm('');
-                                  setIsSessionListVisible(false);
-                                  setLoadedSessionNameForShare(null);
-                              }}
-                              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-3 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50 text-sm border border-gray-300"
-                              disabled={isReferenceInputAreaCollapsed}
-                              >
-                              Switch to Add Manually
-                              </button>
-                          </div>
-                          )}
-                      </div>
-                  </div>
-                  
+                  {!isFolderSyncActive && (<div className="mb-4">
+                        <div className="flex justify-between items-center mb-2"><h3 className="text-sm font-semibold text-gray-700">{referenceAddMode === 'manual' ? 'Add Manually' : 'Load/Create Session'}</h3><button onClick={() => setIsReferenceInputAreaCollapsed(o => !o)} className="p-1 hover:bg-gray-100 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300" title={isReferenceInputAreaCollapsed ? 'Show input' : 'Hide input'} aria-expanded={!isReferenceInputAreaCollapsed} aria-controls="ref-input-collapsible">{isReferenceInputAreaCollapsed ? <ChevronDownIcon className="w-5 h-5" /> : <ChevronUpIcon className="w-5 h-5" />}</button></div>
+                        <div id="ref-input-collapsible" className={`transition-all duration-300 ease-in-out ${isReferenceInputAreaCollapsed ? 'max-h-0 opacity-0 overflow-hidden' : 'max-h-[500px] opacity-100'}`}>
+                            {referenceAddMode === 'manual' && (<div>
+                                <textarea id="reference-input" rows={2} value={referenceInput} onChange={handleReferenceInputChange} placeholder="Ref001, Item ABC, Project X" className="w-full p-2 border border-gray-300 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"/>
+                                <button onClick={handleAddReferencesFromInput} className="mt-2 w-full bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm">Add Manually</button>
+                                <div className="my-3 flex items-center"><hr className="flex-grow border-t"/><span className="mx-3 text-xs text-gray-400">OR</span><hr className="flex-grow border-t"/></div>
+                                <button onClick={() => { setReferenceAddMode('session'); setReferenceInput(''); }} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-3 focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm border">Switch to Load/Create</button>
+                            </div>)}
+                            {referenceAddMode === 'session' && (<div ref={sessionLoadContainerRef}>
+                                <input type="text" id="session-search" placeholder="Search or type to create..." value={sessionSearchTerm} onChange={handleSessionSearchChange} onFocus={() => !isReferenceInputAreaCollapsed && setIsSessionListVisible(true)} onClick={() => !isReferenceInputAreaCollapsed && setIsSessionListVisible(true)} className="w-full p-2 border border-gray-300 focus:ring-1 focus:ring-blue-500 text-sm mb-2" aria-haspopup="listbox" aria-expanded={isSessionListVisible && !isReferenceInputAreaCollapsed} disabled={isReferenceInputAreaCollapsed}/>
+                                {isSessionListVisible && !isReferenceInputAreaCollapsed && sessionDisplayOptions.length > 0 && (<div className="absolute z-10 w-full mt-1 max-h-96 overflow-y-auto border bg-white shadow-sm p-1 space-y-1" role="listbox" id="session-listbox">
+                                    {sessionDisplayOptions.map(opt => (<button key={opt.id} role="option" onClick={() => { if (opt.isCreateOption) handleCreateNewSession(sessionSearchTerm.trim() || "Untitled Session"); else if (opt.originalSessionId) handleLoadExistingSession(opt.originalSessionId); }} disabled={isReferenceInputAreaCollapsed} className={`w-full text-left p-1.5 text-sm ${opt.isCreateOption ? 'text-blue-600 hover:bg-blue-50 font-medium italic' : 'text-gray-700 hover:bg-gray-50'} disabled:opacity-50`} title={opt.name}>{opt.name}</button>))}
+                                    {isSessionListVisible && !isReferenceInputAreaCollapsed && sessionDisplayOptions.length === 0 && sessionSearchTerm.trim() !== '' && (<p className="p-1.5 text-sm text-gray-500 text-center">No sessions match. Type to create.</p>)}
+                                </div>)}
+                                <div className="my-3 flex items-center"><hr className="flex-grow border-t"/><span className="mx-3 text-xs text-gray-400">OR</span><hr className="flex-grow border-t"/></div>
+                                <button onClick={() => { setReferenceAddMode('manual'); setSessionSearchTerm(''); setIsSessionListVisible(false); }} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-3 focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm border" disabled={isReferenceInputAreaCollapsed}>Switch to Add Manually</button>
+                            </div>)}
+                        </div>
+                    </div>)}
+                  {isFolderSyncActive && (<div className="mb-4 p-2 bg-teal-50 border border-teal-200 text-teal-700 text-sm">
+                        <p className="font-medium">Folder Sync Active</p><p className="text-xs">Add refs below for files from '<strong>{syncedFolderName}</strong>'. Session loading disabled.</p>
+                        <div className="mt-2"><textarea id="ref-input-sync" rows={2} value={referenceInput} onChange={handleReferenceInputChange} placeholder="Ref001, Item ABC" className="w-full p-2 border focus:ring-1 focus:ring-blue-500 text-sm"/>
+                        <button onClick={handleAddReferencesFromInput} className="mt-2 w-full bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 px-3 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm">Add References</button></div>
+                    </div>)}
                   <hr className="my-4 border-t border-gray-200" />
-
-
                   <div className="flex-grow flex flex-col min-h-0">
+                        {currentLoadedSessionName && !isFolderSyncActive && (<div className="p-2 mb-3 bg-blue-50 border border-blue-200 text-blue-700 text-sm shadow-sm flex justify-between items-center" role="status">
+                            <div><p className="font-medium">Session: <span className="font-bold">{currentLoadedSessionName}</span></p><p className="text-xs mt-0.5">Add more refs manually.</p></div>
+                            <button onClick={handleUnloadSession} className="p-1 ml-2 text-red-500 hover:bg-red-100 focus:outline-none focus:ring-1 focus:ring-red-400 focus:ring-offset-1 focus:ring-offset-blue-50" title="Unload session & clear refs" aria-label={`Unload ${currentLoadedSessionName}`}><XCircleIcon className="w-5 h-5" /></button>
+                        </div>)}
                         <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-lg font-medium text-gray-700">
-                                Available References ({references.length})
-                                {!isReorderEnabled && selectedImageIds.size > 0 && (
-                                    <span className="text-sm text-blue-600 font-normal"> - Click to associate {selectedImageIds.size} file(s)</span>
-                                )}
-                                {!isReorderEnabled && selectedImageIds.size === 0 && references.length > 0 && imageCountByReference.size > 0 && (
-                                    <span className="text-sm text-gray-500 font-normal"> - Click a reference with files to filter</span>
-                                )}
-                                {isReorderEnabled && (
-                                    <span className="text-sm text-blue-500 font-normal"> - Reordering active for current reference</span>
-                                )}
+                            <h3 className="text-lg font-medium text-gray-700">Available References ({references.length})
+                                {!isReorderEnabled && selectedImageIds.size > 0 && (<span className="text-sm text-blue-600 font-normal"> - Click to associate {selectedImageIds.size} file(s)</span>)}
+                                {!isReorderEnabled && !selectedImageIds.size && references.length > 0 && imageCountByReference.size > 0 && !currentLoadedSessionName && !isFolderSyncActive && (<span className="text-sm text-gray-500 font-normal"> - Click ref to filter</span>)}
+                                {isReorderEnabled && (<span className="text-sm text-blue-500 font-normal"> - Reordering active</span>)}
                             </h3>
                             <div className="flex items-center space-x-1">
-                                <button
-                                    onClick={() => setReferenceViewMode('list')}
-                                    className={`p-1.5 rounded-md text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300
-                                                ${referenceViewMode === 'list' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
-                                    title="List View"
-                                    aria-pressed={referenceViewMode === 'list'}
-                                >
-                                    <ListBulletIcon className="w-5 h-5" />
-                                </button>
-                                <button
-                                    onClick={() => setReferenceViewMode('grid')}
-                                    className={`p-1.5 rounded-md text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300
-                                                ${referenceViewMode === 'grid' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
-                                    title="Grid View"
-                                    aria-pressed={referenceViewMode === 'grid'}
-                                >
-                                    <Squares2X2Icon className="w-5 h-5" />
-                                </button>
+                                <button onClick={() => setReferenceViewMode('list')} className={`p-1.5 ${referenceViewMode === 'list' ? 'bg-gray-200' : 'hover:bg-gray-100'} text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2`} title="List View" aria-pressed={referenceViewMode === 'list'}><ListBulletIcon className="w-5 h-5" /></button>
+                                <button onClick={() => setReferenceViewMode('grid')} className={`p-1.5 ${referenceViewMode === 'grid' ? 'bg-gray-200' : 'hover:bg-gray-100'} text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2`} title="Grid View" aria-pressed={referenceViewMode === 'grid'}><Squares2X2Icon className="w-5 h-5" /></button>
                             </div>
                         </div>
-                      {references.length === 0 ? (
-                      <p className="text-center text-gray-500 py-8 flex-grow flex items-center justify-center">
-                          {'No references added yet. Use a method above.'}
-                      </p>
-                      ) : (
-                        <div className={`flex-grow overflow-y-auto pr-1 pb-1 ${
-                            referenceViewMode === 'grid' 
-                            ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-3' 
-                            : 'flex flex-col space-y-2'
-                        }`}>
-                            {references.map(ref => (
-                                <ReferenceItem
-                                key={ref.id}
-                                reference={ref}
-                                associatedImageCount={imageCountByReference.get(ref.id) || 0}
-                                onSelect={handleReferenceItemClick} 
-                                canAssociate={!isReorderEnabled && selectedImageIds.size > 0}
-                                isFilterTarget={filteringByReferenceDetail?.id === ref.id}
-                                previewImageUrl={getReferencePreviewImageUrl(ref.id)}
-                                viewMode={referenceViewMode}
-                                onDelete={handleDeleteReference}
-                                />
-                            ))}
-                        </div>
-                      )}
+                      {references.length === 0 ? (<p className="text-center text-gray-500 py-8 flex-grow flex items-center justify-center">{isFolderSyncActive ? `No refs for '${syncedFolderName}'. Add above.` : (currentLoadedSessionName ? `Session '${currentLoadedSessionName}' has no refs. Add manually.` : 'No refs. Use a method above.')}</p>)
+                      : (<div className={`flex-grow overflow-y-auto pr-1 pb-1 ${referenceViewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-3' : 'flex flex-col space-y-2'}`}>
+                            {references.map(ref => (<ReferenceItem key={ref.id} reference={ref} associatedImageCount={imageCountByReference.get(ref.id) || 0} onSelect={handleReferenceItemClick} canAssociate={!isReorderEnabled && selectedImageIds.size > 0} isFilterTarget={filteringByReferenceDetail?.id === ref.id} previewImageUrl={getReferencePreviewImageUrl(ref.id)} viewMode={referenceViewMode} onDelete={handleDeleteReference}/>))}
+                        </div>)}
                   </div>
-              </div> 
-            </>
-          )}
+              </div></>)}
         </section>
       </main>
 
-      {isShareModalOpen && (
-        <ShareModal
-          isOpen={isShareModalOpen}
-          onClose={handleCloseShareModal}
-          initialSessionName={loadedSessionNameForShare}
-          onConfirmShare={handleConfirmShare}
-        />
-      )}
-
-      {notification && (
-        <div 
-          className={`fixed bottom-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-md shadow-lg text-white text-sm z-[10000]
-                      ${notification.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}
-          role="alert"
-          aria-live="assertive"
-        >
-          {notification.message}
-        </div>
-      )}
+      {isShareModalOpen && (<ShareModal isOpen={isShareModalOpen} onClose={handleCloseShareModal} initialSessionName={isFolderSyncActive ? `Folder: ${syncedFolderName}` : (loadedSessionNameForShare || currentLoadedSessionName)} onConfirmShare={handleConfirmShare}/>)}
+      {isConfirmationModalOpen && confirmationModalConfig && (<ConfirmationModal isOpen={isConfirmationModalOpen} onClose={closeConfirmationModal} onConfirm={confirmationModalConfig.onConfirmAction} title={confirmationModalConfig.title} message={confirmationModalConfig.message} confirmButtonText={confirmationModalConfig.confirmButtonText}/>)}
+      {notification && (<div className={`fixed bottom-5 left-1/2 -translate-x-1/2 px-6 py-3 shadow-lg text-white text-sm z-[10000] ${notification.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`} role="alert" aria-live="assertive">{notification.message}</div>)}
     </div>
   );
 };

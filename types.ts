@@ -7,6 +7,7 @@ export interface ImageFile {
   dataUrl?: string; // for preview, now optional
   fileObject: File; // original file object
   associatedReferenceId?: string | null;
+  rating?: number; // 0-5 stars, 0 or undefined for no rating
 }
 
 export interface Reference {

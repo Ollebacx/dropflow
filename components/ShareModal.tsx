@@ -56,12 +56,12 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, initialSession
       aria-modal="true"
       aria-labelledby="share-modal-title"
     >
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 w-full max-w-md transform transition-all">
+      <div className="bg-white shadow-sm border border-gray-200 p-6 w-full max-w-md transform transition-all">
         <div className="flex justify-between items-center mb-4">
           <h2 id="share-modal-title" className="text-xl font-semibold text-gray-800">Share Session</h2>
           <button
             onClick={onClose}
-            className="p-1 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+            className="p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
             aria-label="Close share modal"
           >
             <XMarkIcon className="w-5 h-5" />
@@ -79,7 +79,7 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, initialSession
               value={sessionNameInput}
               onChange={(e) => setSessionNameInput(e.target.value)}
               placeholder="Enter a name for this session"
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              className="w-full p-2 border border-gray-300 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
               required
             />
           </div>
@@ -128,7 +128,7 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, initialSession
                   id="retouchStep"
                   value={selectedStep}
                   onChange={(e) => setSelectedStep(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+                  className="w-full p-2 border border-gray-300 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
                   required
                 >
                   {RETOUCH_STEPS.map(step => (
@@ -146,7 +146,7 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, initialSession
                   value={assigneeName}
                   onChange={(e) => setAssigneeName(e.target.value)}
                   placeholder="Retoucher's Name or Email"
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="w-full p-2 border border-gray-300 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 />
               </div>
             </>
@@ -157,7 +157,7 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, initialSession
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-400 transition-colors"
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-400 transition-colors"
           >
             Cancel
           </button>
@@ -165,7 +165,7 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, initialSession
             type="button"
             onClick={handleConfirm}
             disabled={isConfirmDisabled}
-            className={`px-4 py-2 text-sm font-medium text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-opacity-75 transition-colors
+            className={`px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-opacity-75 transition-colors
                         ${isConfirmDisabled 
                             ? 'bg-gray-300 cursor-not-allowed' 
                             : 'bg-slate-700 hover:bg-slate-800 focus:ring-slate-500'

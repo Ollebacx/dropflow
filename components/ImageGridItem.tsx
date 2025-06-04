@@ -1,7 +1,7 @@
 
 import React, { useState, DragEvent } from 'react';
 import { ImageFile, Reference } from '../types';
-import { CheckCircleIcon, LinkIcon, XCircleIcon, DocumentIcon } from '../constants';
+import { CheckCircleIcon, LinkIcon, XCircleIcon, DocumentIcon, StarIconFilled, StarIconOutline } from '../constants';
 
 interface ImageGridItemProps {
   image: ImageFile;
@@ -13,7 +13,8 @@ interface ImageGridItemProps {
   draggedImageId?: string | null; 
   onDragStartImage?: (event: DragEvent<HTMLDivElement>, imageId: string) => void;
   onDropOnImage?: (event: DragEvent<HTMLDivElement>, targetImageId: string) => void;
-  onActualDragEnd?: () => void; 
+  onActualDragEnd?: () => void;
+  cardWidth: number; // New prop for dynamic width
 }
 
 const ImageGridItem: React.FC<ImageGridItemProps> = React.memo(({ 
@@ -27,6 +28,7 @@ const ImageGridItem: React.FC<ImageGridItemProps> = React.memo(({
   onDragStartImage,
   onDropOnImage,
   onActualDragEnd,
+  cardWidth,
 }) => {
   const [showDropIndicator, setShowDropIndicator] = useState(false);
 
@@ -86,28 +88,32 @@ const ImageGridItem: React.FC<ImageGridItemProps> = React.memo(({
     setShowDropIndicator(false); 
   };
   
-  const baseClasses = "w-[210px] h-[380px] relative group rounded-lg overflow-hidden transition-all duration-200 ease-out flex flex-col shadow-sm"; // Use a very subtle shadow for depth
+  const cardHeight = cardWidth * (400 / 210); // Maintain aspect ratio
+  const dynamicStyles = {
+    width: `${cardWidth}px`,
+    height: `${cardHeight}px`,
+  };
+
+  const baseClasses = "relative group overflow-hidden transition-all duration-200 ease-out flex flex-col shadow-sm";
   const cursorClasses = isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer';
   
   let ringClasses = '';
-  if (isSelected && !isDraggable) {
-    ringClasses = 'ring-2 ring-offset-0 ring-blue-500'; 
-  }
-
-  let hoverEffectClasses = 'hover:shadow-md'; // Slightly increase shadow on hover
-  if (isDraggable) hoverEffectClasses = ''; 
+  let hoverEffectClasses = ''; // Removed hover:shadow-md
 
   if (showDropIndicator && isDraggable && draggedImageId && draggedImageId !== image.id) {
-    ringClasses = 'ring-2 ring-blue-500'; 
+    ringClasses = 'ring-2 ring-blue-500'; // Ring for drop indication remains
     hoverEffectClasses = ''; 
   }
 
   const canDisplayPreview = image.dataUrl && image.type.startsWith('image/');
   const fileExtension = image.name.split('.').pop()?.toUpperCase() || 'FILE';
+  
+  const documentIconSize = Math.min(96, Math.max(24, cardWidth / 3.3));
 
 
   return (
     <div
+      id={`image-card-${image.id}`}
       onClick={handleImageClick}
       draggable={isDraggable}
       onDragStart={handleDragStart}
@@ -117,34 +123,53 @@ const ImageGridItem: React.FC<ImageGridItemProps> = React.memo(({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`${baseClasses} ${cursorClasses} ${ringClasses} ${hoverEffectClasses}`}
-      title={isDraggable ? `Drag to reorder: ${image.name}` : `Click to select/deselect. Name: ${image.name}. Last modified: ${new Date(image.lastModified).toLocaleDateString()}`}
+      style={dynamicStyles}
+      title={isDraggable ? `Drag to reorder: ${image.name}` : `Click to select/deselect. Name: ${image.name}. Last modified: ${new Date(image.lastModified).toLocaleDateString()}${image.rating ? `. Rating: ${image.rating} stars` : ''}`}
       role={isDraggable ? "listitem" : "button"}
       aria-pressed={!isDraggable && isSelected}
-      aria-label={`File: ${image.name}${associatedReference ? `, Associated with: ${associatedReference.text}` : ''}`}
+      aria-label={`File: ${image.name}${associatedReference ? `, Associated with: ${associatedReference.text}` : ''}${image.rating ? `, Rating: ${image.rating} out of 5 stars` : ', Not rated'}`}
     >
-      <div className="flex-grow relative overflow-hidden rounded-t-lg bg-gray-50"> {/* Ensure image respects rounded corners and provide a default bg */}
+      <div className="flex-grow relative overflow-hidden bg-gray-50">
+        {/* Image content or placeholder */}
         {canDisplayPreview ? (
             <img src={image.dataUrl} alt={image.name} className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
         ) : (
             <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-center p-2 text-gray-500 pointer-events-none">
-                <DocumentIcon className="w-16 h-16 mb-2 opacity-70 flex-shrink-0" />
-                <p className="text-sm font-semibold text-gray-600 text-center break-all leading-tight" title={image.name}>
+                <DocumentIcon 
+                    className="mb-2 opacity-70 flex-shrink-0" 
+                    style={{ width: `${documentIconSize}px`, height: `${documentIconSize}px`}}
+                />
+                <p 
+                    className="font-semibold text-gray-600 text-center break-all leading-tight" 
+                    style={{ fontSize: `${Math.max(10, cardWidth/18)}px` }}
+                    title={image.name}
+                >
                     {fileExtension}
                 </p>
             </div>
         )}
+
+        {/* Selection Overlay */}
         {isSelected && !isDraggable && (
-          <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1 z-10" aria-hidden="true">
-            <CheckCircleIcon className="w-5 h-5" />
-          </div>
+          <div className="absolute inset-0 bg-blue-500 bg-opacity-30 pointer-events-none z-[5]"></div>
         )}
+        
       </div>
       
-      <div className="p-3 border-t border-gray-100 bg-white rounded-b-lg">
+      <div className="p-3 border-t border-gray-100 bg-white">
         <p className="text-sm font-medium text-gray-800 truncate" title={image.name}>{image.name}</p>
-        <p className="text-xs text-gray-500">{new Date(image.lastModified).toLocaleDateString()}</p>
+        <p className="text-xs text-gray-500 mb-1">{new Date(image.lastModified).toLocaleDateString()}</p>
+        
+        <div className="flex items-center my-1">
+          {[1, 2, 3, 4, 5].map((star) => (
+            image.rating && image.rating >= star
+              ? <StarIconFilled key={star} className="w-3.5 h-3.5 text-yellow-400" />
+              : <StarIconOutline key={star} className="w-3.5 h-3.5 text-gray-300" />
+          ))}
+        </div>
+
         {associatedReference && (
-          <div className="mt-2 flex items-center text-xs bg-green-50 text-green-700 px-2 py-1 rounded-md border border-green-200">
+          <div className="mt-1.5 flex items-center text-xs bg-green-50 text-green-700 px-2 py-1 border border-green-200">
             <LinkIcon className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
             <span className="truncate flex-grow" title={`Associated with: ${associatedReference.text}`}>
               {associatedReference.text}
@@ -152,7 +177,7 @@ const ImageGridItem: React.FC<ImageGridItemProps> = React.memo(({
             {!isDraggable && (
             <button 
               onClick={handleUnassociateClick} 
-              className="ml-1 p-0.5 rounded-full hover:bg-green-100 text-green-600 hover:text-green-800 focus:outline-none focus:ring-1 focus:ring-green-400"
+              className="ml-1 p-0.5 hover:bg-green-100 text-green-600 hover:text-green-800 focus:outline-none focus:ring-1 focus:ring-green-400"
               title="Unassociate this file"
               aria-label={`Unassociate file ${image.name} from reference ${associatedReference.text}`}
             >
@@ -163,7 +188,7 @@ const ImageGridItem: React.FC<ImageGridItemProps> = React.memo(({
         )}
       </div>
        {isDraggable && (
-        <div className="absolute top-1.5 right-1.5 bg-gray-500 bg-opacity-60 text-white p-0.5 rounded-full z-10" aria-hidden="true">
+        <div className="absolute top-1.5 right-1.5 bg-gray-500 bg-opacity-60 text-white p-0.5 z-10" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9h16.5m-16.5 6.75h16.5" />
           </svg>
