@@ -99,6 +99,7 @@ export const IMAGE_FILTER_TYPE_DISPLAY_NAMES: Record<ImageFilterType, string> = 
 };
 
 const DEFAULT_IMAGE_CARD_SIZE = 210;
+const AUTO_SYNC_INTERVAL = 30000; // 30 seconds
 
 const App: React.FC = () => {
   const [images, setImages] = useState<ImageFile[]>([]);
@@ -154,6 +155,10 @@ const App: React.FC = () => {
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const filterPanelButtonRef = useRef<HTMLButtonElement>(null);
   const filterPanelRef = useRef<HTMLDivElement>(null);
+  
+  const autoSyncIntervalIdRef = useRef<number | null>(null);
+  const isFolderSyncActiveRef = useRef(isFolderSyncActive);
+  useEffect(() => { isFolderSyncActiveRef.current = isFolderSyncActive; }, [isFolderSyncActive]);
 
 
   const isReorderEnabled = useMemo(() => {
@@ -227,7 +232,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const dragTarget = document.documentElement;
     const handleDragEnter = (event: globalThis.DragEvent) => {
-      event.preventDefault(); if (isFolderSyncActive) return;
+      event.preventDefault(); if (isFolderSyncActiveRef.current) return;
       if (event.dataTransfer?.types.includes('Files')) {
         dragOverDocumentCounterRef.current++;
         if (!showDropZoneOverlay) { setCurrentDropPhrase(dropPhrases[Math.floor(Math.random() * dropPhrases.length)]); setShowDropZoneOverlay(true); }
@@ -235,14 +240,14 @@ const App: React.FC = () => {
     };
     const handleDragOver = (event: globalThis.DragEvent) => event.preventDefault();
     const handleDragLeave = (event: globalThis.DragEvent) => {
-      event.preventDefault(); if (isFolderSyncActive) return;
+      event.preventDefault(); if (isFolderSyncActiveRef.current) return;
       if (event.dataTransfer?.types.includes('Files')) {
         dragOverDocumentCounterRef.current--;
         if (dragOverDocumentCounterRef.current <= 0) { setShowDropZoneOverlay(false); dragOverDocumentCounterRef.current = 0; }
       }
     };
     const handleDrop = (event: globalThis.DragEvent) => {
-      event.preventDefault(); if (isFolderSyncActive) return;
+      event.preventDefault(); if (isFolderSyncActiveRef.current) return;
       setShowDropZoneOverlay(false); dragOverDocumentCounterRef.current = 0;
       if (event.dataTransfer?.files?.length) processFileListAndSetImages(event.dataTransfer.files);
     };
@@ -252,7 +257,7 @@ const App: React.FC = () => {
       dragTarget.removeEventListener('dragenter', handleDragEnter); dragTarget.removeEventListener('dragover', handleDragOver);
       dragTarget.removeEventListener('dragleave', handleDragLeave); dragTarget.removeEventListener('drop', handleDrop);
     };
-  }, [processFileListAndSetImages, showDropZoneOverlay, isFolderSyncActive]);
+  }, [processFileListAndSetImages, showDropZoneOverlay]);
 
   const filteredAndSortedImages = useMemo(() => {
     let filtered = images.filter(image => {
@@ -337,7 +342,7 @@ const App: React.FC = () => {
     const imgToUpdate = imagesByIdMap.get(imageId); if (!imgToUpdate) return;
     const oldRefId = imgToUpdate.associatedReferenceId;
     setImages(prev => prev.map(img => img.id === imageId ? { ...img, associatedReferenceId: null, lastModified: Date.now() } : img));
-    if (oldRefId && !isFolderSyncActive) {
+    if (oldRefId && !isFolderSyncActiveRef.current) {
       setReferenceImageOrder(prev => {
         const newO = new Map(prev); const currO = newO.get(oldRefId);
         if (currO) { const updO = currO.filter(id => id !== imageId); updO.length ? newO.set(oldRefId, updO) : newO.delete(oldRefId); } return newO;
@@ -347,10 +352,10 @@ const App: React.FC = () => {
       setFilteringByReferenceDetail(null);
       setImageFilter(isReferencingModeActive && images.some(i => i.id !== imageId && i.associatedReferenceId) ? ImageFilterType.ASSOCIATED : ImageFilterType.ALL);
     }
-  }, [imagesByIdMap, images, filteringByReferenceDetail, isReferencingModeActive, isFolderSyncActive]);
+  }, [imagesByIdMap, images, filteringByReferenceDetail, isReferencingModeActive]);
 
   const handleDeleteImage = useCallback((imageId: string) => {
-    if (isFolderSyncActive) { showAppNotification("Cannot delete files from synced folder. Manage in file system & refresh.", "error"); return; }
+    if (isFolderSyncActiveRef.current) { showAppNotification("Cannot delete files from synced folder. Manage in file system & refresh.", "error"); return; }
     const imgToDelete = imagesByIdMap.get(imageId); if (!imgToDelete) return;
     const assocRefId = imgToDelete.associatedReferenceId;
     setImages(prev => prev.filter(img => img.id !== imageId));
@@ -366,18 +371,18 @@ const App: React.FC = () => {
       setFilteringByReferenceDetail(null);
       setImageFilter(isReferencingModeActive && images.some(i => i.id !== imageId && i.associatedReferenceId) ? ImageFilterType.ASSOCIATED : ImageFilterType.ALL);
     }
-  }, [selectionAnchorId, images, filteringByReferenceDetail, imagesByIdMap, isReferencingModeActive, isFolderSyncActive, showAppNotification]);
+  }, [selectionAnchorId, images, filteringByReferenceDetail, imagesByIdMap, isReferencingModeActive, showAppNotification]);
 
   const handleDeleteReference = useCallback((refId: string) => {
     const updRefs = references.filter(ref => ref.id !== refId); setReferences(updRefs);
-    if (updRefs.length === 0 && !isFolderSyncActive) { setCurrentLoadedSessionName(null); setLoadedSessionNameForShare(null); }
+    if (updRefs.length === 0 && !isFolderSyncActiveRef.current) { setCurrentLoadedSessionName(null); setLoadedSessionNameForShare(null); }
     setImages(prev => prev.map(img => img.associatedReferenceId === refId ? { ...img, associatedReferenceId: null, lastModified: Date.now() } : img));
-    if (!isFolderSyncActive) { setReferenceImageOrder(prev => { const newO = new Map(prev); newO.delete(refId); return newO; }); }
+    if (!isFolderSyncActiveRef.current) { setReferenceImageOrder(prev => { const newO = new Map(prev); newO.delete(refId); return newO; }); }
     if (filteringByReferenceDetail?.id === refId) {
       setFilteringByReferenceDetail(null);
       setImageFilter(isReferencingModeActive && images.some(i => i.associatedReferenceId && i.associatedReferenceId !== refId) ? ImageFilterType.ASSOCIATED : ImageFilterType.ALL);
     }
-  }, [references, images, filteringByReferenceDetail, isReferencingModeActive, isFolderSyncActive]);
+  }, [references, images, filteringByReferenceDetail, isReferencingModeActive]);
 
   const imageCountByReference = useMemo(() => {
     const counts = new Map<string, number>();
@@ -389,20 +394,20 @@ const App: React.FC = () => {
     setImageFilter(newFilter);
     setFilteringByReferenceDetail(null); // Clear specific ref filter when changing main status filter
 
-    const willReorderBeDisabled = !(newFilter === ImageFilterType.ASSOCIATED && !!filteringByReferenceDetail && !isFolderSyncActive);
+    const willReorderBeDisabled = !(newFilter === ImageFilterType.ASSOCIATED && !!filteringByReferenceDetail && !isFolderSyncActiveRef.current);
 
     if (willReorderBeDisabled) {
         setSelectedImageIds(new Set());
         setSelectionAnchorId(null);
     }
-  }, [filteringByReferenceDetail, isFolderSyncActive]); 
+  }, [filteringByReferenceDetail]); 
 
   const handleReferenceItemClick = useCallback((refId: string) => {
     const refDetails = referenceMap.get(refId); if (!refDetails) return;
     if (selectedImageIds.size > 0 && !isReorderEnabled) {
       const now = Date.now();
       setImages(prev => prev.map(img => selectedImageIds.has(img.id) ? { ...img, associatedReferenceId: refId, lastModified: now } : img));
-      if (!isFolderSyncActive) {
+      if (!isFolderSyncActiveRef.current) {
         setReferenceImageOrder(prev => {
           const newO = new Map(prev); const currO = newO.get(refId) || [];
           const newIds = Array.from(selectedImageIds).filter(id => !currO.includes(id));
@@ -419,10 +424,10 @@ const App: React.FC = () => {
       }
       setSelectedImageIds(new Set()); setSelectionAnchorId(null);
     }
-  }, [selectedImageIds, referenceMap, imageCountByReference, filteringByReferenceDetail, isReorderEnabled, imageFilter, isFolderSyncActive]);
+  }, [selectedImageIds, referenceMap, imageCountByReference, filteringByReferenceDetail, isReorderEnabled, imageFilter]);
   
   const getCurrentViewTitle = () => {
-    if (isFolderSyncActive) return `Folder: ${syncedFolderName || 'Unknown'}`;
+    if (isFolderSyncActiveRef.current) return `Folder: ${syncedFolderName || 'Unknown'}`;
     if (filteringByReferenceDetail && imageFilter === ImageFilterType.ASSOCIATED) return `Files for: ${filteringByReferenceDetail.text}`;
     if (!isReferencingModeActive || isReferencesPanelCollapsed) return filteringByReferenceDetail && imageFilter === ImageFilterType.ASSOCIATED ? `Files for: ${filteringByReferenceDetail.text}` : "All Files";
     switch (imageFilter) { case ImageFilterType.ALL: return "All Files"; case ImageFilterType.ASSOCIATED: return "All Associated Files"; case ImageFilterType.UNASSOCIATED: return "All Unassociated Files"; default: return "Current View"; }
@@ -451,18 +456,18 @@ const App: React.FC = () => {
   const handleActualDragEndFromItem = useCallback(() => setDraggedImageId(null), []);
 
   const getReferencePreviewImageUrl = useCallback((refId: string): string | null => {
-    if (!isFolderSyncActive && referenceImageOrder.has(refId)) {
+    if (!isFolderSyncActiveRef.current && referenceImageOrder.has(refId)) {
       const customOrder = referenceImageOrder.get(refId);
       if (customOrder?.length) { const img = imagesByIdMap.get(customOrder[0]); if (img?.associatedReferenceId === refId && img.dataUrl && img.type.startsWith('image/')) return img.dataUrl; }
     }
     const assocFiles = images.filter(i => i.associatedReferenceId === refId).sort((a, b) => b.lastModified - a.lastModified);
     for (const file of assocFiles) if (file.dataUrl && file.type.startsWith('image/')) return file.dataUrl;
     return null;
-  }, [images, referenceImageOrder, imagesByIdMap, isFolderSyncActive]);
+  }, [images, referenceImageOrder, imagesByIdMap]);
 
-  const handleUploadButtonClick = () => { if (!isFolderSyncActive) fileInputRef.current?.click(); };
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (!isFolderSyncActive && e.target.files?.length) { processFileListAndSetImages(e.target.files); e.target.value = ''; } };
-  const showGallerySubtitle = !(images.length === 0 && !filteringByReferenceDetail && !isFolderSyncActive);
+  const handleUploadButtonClick = () => { if (!isFolderSyncActiveRef.current) fileInputRef.current?.click(); };
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (!isFolderSyncActiveRef.current && e.target.files?.length) { processFileListAndSetImages(e.target.files); e.target.value = ''; } };
+  const showGallerySubtitle = !(images.length === 0 && !filteringByReferenceDetail && !isFolderSyncActiveRef.current);
   const handleSessionSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => setSessionSearchTerm(e.target.value);
 
   const openConfirmationModal = useCallback((title: string, message: React.ReactNode, onConfirm: () => void, confirmText?: string) => { setConfirmationModalConfig({ title, message, onConfirmAction: onConfirm, confirmButtonText: confirmText }); setIsConfirmationModalOpen(true); }, []);
@@ -504,16 +509,139 @@ const App: React.FC = () => {
     opts.push(...matched); return opts;
   }, [sessionSearchTerm, sessions, currentLoadedSessionName]);
 
-  const loadFilesFromDirectoryHandle = useCallback(async (dirHandle: FileSystemDirectoryHandle | null) => {
-    if (!dirHandle) return; setIsLoadingDirectory(true); setImages([]);
+  const handleStopFolderSync = useCallback((confirm = true) => {
+    const doStop = () => { 
+      if (autoSyncIntervalIdRef.current) {
+        clearInterval(autoSyncIntervalIdRef.current);
+        autoSyncIntervalIdRef.current = null;
+      }
+      clearAllDataForNewLoad(); 
+      setDirectoryHandle(null); 
+      setIsFolderSyncActive(false); 
+      setSyncedFolderName(null); 
+      setIsLoadingDirectory(false); 
+      showAppNotification("Folder sync stopped.", 'success'); 
+      closeConfirmationModal(); 
+    };
+    if (confirm && (images.length || references.length || directoryHandle)) { // Check directoryHandle as well
+        openConfirmationModal(
+            "Confirm Stop Sync", 
+            <>
+                <p>Stopping sync will clear all loaded files{syncedFolderName ? ` from '<strong>${syncedFolderName}</strong>'` : ''} ({images.length}) and any associated references ({references.length}).</p>
+                <p className="mt-2">This action will also stop automatic updates from the folder.</p>
+                <p className="mt-2 font-semibold">Do you want to stop syncing?</p>
+            </>, 
+            doStop, 
+            "Stop Sync"
+        );
+    } else {
+        doStop();
+    }
+  }, [images, references, syncedFolderName, directoryHandle, clearAllDataForNewLoad, showAppNotification, openConfirmationModal, closeConfirmationModal]);
+
+  const loadFilesFromDirectoryHandle = useCallback(async (dirHandle: FileSystemDirectoryHandle | null, isAutoRefresh: boolean = false) => {
+    if (!dirHandle) return;
+    setIsLoadingDirectory(true);
+    
     const filesFromDir: File[] = [];
+    let newImageFileObjects: ImageFile[] = [];
+    const previousImageCount = images.length;
+    const previousImageSignatures = new Set(images.map(img => `${img.name}|${img.size}|${img.lastModified}`));
+
     try {
-      for await (const entry of dirHandle.values()) if (entry.kind === 'file' && entry.name.match(/\.(jpe?g|png|gif|webp|svg)$/i)) filesFromDir.push(await entry.getFile());
-      const imgObjs = await processAndSetImageFiles(filesFromDir); setImages(imgObjs);
-      showAppNotification(`Folder '${dirHandle.name}' processed. ${imgObjs.length} images.`, 'success');
-    } catch (e: any) { console.error("Dir read error:", e); showAppNotification(`Error reading folder: ${e.message || 'Unknown'}. Try re-selecting.`, 'error'); if (e.name === 'NotAllowedError') handleStopFolderSync(false); }
-    finally { setIsLoadingDirectory(false); }
-  }, [processAndSetImageFiles, showAppNotification]);
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'file' && entry.name.match(/\.(jpe?g|png|gif|webp|svg)$/i)) {
+          filesFromDir.push(await entry.getFile());
+        }
+      }
+      newImageFileObjects = await processAndSetImageFiles(filesFromDir);
+      
+      let contentChanged = false;
+      if (isAutoRefresh) {
+        const currentImageSignatures = new Set(newImageFileObjects.map(img => `${img.name}|${img.size}|${img.lastModified}`));
+        contentChanged = previousImageSignatures.size !== currentImageSignatures.size;
+        if (!contentChanged && currentImageSignatures.size > 0) {
+          for (const sig of currentImageSignatures) {
+            if (!previousImageSignatures.has(sig)) {
+              contentChanged = true;
+              break;
+            }
+          }
+        }
+      }
+
+      setImages(newImageFileObjects);
+
+      if (isAutoRefresh) {
+        if (contentChanged) {
+          showAppNotification(`Folder '${dirHandle.name}' updated automatically. ${newImageFileObjects.length} images.`, 'success');
+        } else {
+          console.log(`Auto-sync: No changes detected in '${dirHandle.name}'.`);
+        }
+      } else {
+        showAppNotification(`Folder '${dirHandle.name}' processed. ${newImageFileObjects.length} images.`, 'success');
+      }
+    } catch (e: any) {
+      console.error("Directory read error:", e);
+      if (!isAutoRefresh) {
+        showAppNotification(`Error reading folder: ${e.message || 'Unknown'}. Try re-selecting.`, 'error');
+      } else {
+         showAppNotification(`Auto-sync error for '${dirHandle.name}': ${e.message || 'Unknown'}.`, 'error');
+      }
+      if (e.name === 'NotAllowedError') {
+        handleStopFolderSync(false); 
+      }
+    } finally {
+      setIsLoadingDirectory(false);
+    }
+  }, [processAndSetImageFiles, showAppNotification, images, handleStopFolderSync]); 
+
+  const stopAutoRefresh = useCallback(() => {
+    if (autoSyncIntervalIdRef.current) {
+      clearInterval(autoSyncIntervalIdRef.current);
+      autoSyncIntervalIdRef.current = null;
+      console.log("Auto-refresh stopped.");
+    }
+  }, []);
+
+  const autoRefreshLogic = useCallback(async () => {
+    const currentDirHandle = directoryHandle; 
+    if (!currentDirHandle || !isFolderSyncActiveRef.current) {
+      stopAutoRefresh();
+      return;
+    }
+    console.log(`Auto-sync: Polling '${currentDirHandle.name}'...`);
+    try {
+      const perm = await currentDirHandle.queryPermission({ mode: 'read' });
+      if (perm === 'granted' || (perm === 'prompt' && await currentDirHandle.requestPermission({ mode: 'read' }) === 'granted')) {
+        setImages(prev => prev.map(i => ({ ...i, associatedReferenceId: null }))); 
+        setSelectedImageIds(new Set());
+        setSelectionAnchorId(null);
+        setFilteringByReferenceDetail(null);
+        setImageFilter(ImageFilterType.ALL);
+        setReferenceImageOrder(new Map());
+        setRatingFilter(null);
+        
+        await loadFilesFromDirectoryHandle(currentDirHandle, true); 
+      } else {
+        showAppNotification("Auto-sync: Folder permission lost. Stopping sync.", "error");
+        handleStopFolderSync(false); 
+      }
+    } catch (e: any) {
+      console.error("Auto-sync error:", e);
+      showAppNotification(`Auto-sync error for '${currentDirHandle.name}': ${e.message}. Stopping sync.`, "error");
+      handleStopFolderSync(false); 
+    }
+  }, [directoryHandle, loadFilesFromDirectoryHandle, showAppNotification, handleStopFolderSync, stopAutoRefresh]);
+
+
+  const startAutoRefresh = useCallback(() => {
+    stopAutoRefresh(); 
+    if (directoryHandle && isFolderSyncActiveRef.current) {
+      console.log("Starting auto-refresh for", directoryHandle.name);
+      autoSyncIntervalIdRef.current = window.setInterval(autoRefreshLogic, AUTO_SYNC_INTERVAL);
+    }
+  }, [directoryHandle, stopAutoRefresh, autoRefreshLogic]);
 
   const handleStartFolderSync = useCallback(async () => {
     if (!browserSupportsFileSystemAccessAPI) { showAppNotification("Browser doesn't support File System Access API.", "error"); return; }
@@ -523,13 +651,18 @@ const App: React.FC = () => {
         const handle = await window.showDirectoryPicker!(); if (!handle) return;
         const perm = await handle.queryPermission({ mode: 'read' });
         if (perm === 'granted' || (perm === 'prompt' && await handle.requestPermission({ mode: 'read' }) === 'granted')) {
-          clearAllDataForNewLoad(); setDirectoryHandle(handle); setSyncedFolderName(handle.name); setIsFolderSyncActive(true); loadFilesFromDirectoryHandle(handle);
+          clearAllDataForNewLoad(); 
+          setDirectoryHandle(handle); 
+          setSyncedFolderName(handle.name); 
+          setIsFolderSyncActive(true); // Set active *before* initial load and starting auto-refresh
+          await loadFilesFromDirectoryHandle(handle, false); 
+          startAutoRefresh(); 
         } else showAppNotification("Folder read permission denied.", "error");
       } catch (err: any) { if (err.name === 'AbortError') showAppNotification("Folder selection cancelled.", "success"); else { console.error("Dir select error:", err); showAppNotification("Could not select directory: " + err.message, "error"); } }
     };
     if (images.length || references.length || currentLoadedSessionName) openConfirmationModal("Confirm Folder Sync", <><p>Folder sync clears all current files ({images.length}), refs ({references.length}), & associations.</p><p className="mt-2 font-semibold">Cannot be undone.</p><p className="mt-2">Proceed?</p></>, doSync);
     else doSync();
-  }, [browserSupportsFileSystemAccessAPI, images, references, currentLoadedSessionName, clearAllDataForNewLoad, loadFilesFromDirectoryHandle, showAppNotification, openConfirmationModal, closeConfirmationModal]);
+  }, [browserSupportsFileSystemAccessAPI, images, references, currentLoadedSessionName, clearAllDataForNewLoad, loadFilesFromDirectoryHandle, showAppNotification, openConfirmationModal, closeConfirmationModal, startAutoRefresh]);
 
   const handleRefreshSyncedFolder = useCallback(async () => {
     if (!directoryHandle) return;
@@ -537,18 +670,22 @@ const App: React.FC = () => {
       const perm = await directoryHandle.queryPermission({ mode: 'read' });
       if (perm === 'granted' || (perm === 'prompt' && await directoryHandle.requestPermission({ mode: 'read' }) === 'granted')) {
         showAppNotification(`Refreshing '${directoryHandle.name}'...`, 'success');
-        setImages(prev => prev.map(i => ({ ...i, associatedReferenceId: null }))); setSelectedImageIds(new Set()); setSelectionAnchorId(null);
-        setFilteringByReferenceDetail(null); setImageFilter(ImageFilterType.ALL); setReferenceImageOrder(new Map()); setRatingFilter(null);
-        loadFilesFromDirectoryHandle(directoryHandle);
+        setImages(prev => prev.map(i => ({ ...i, associatedReferenceId: null }))); 
+        setSelectedImageIds(new Set()); setSelectionAnchorId(null);
+        setFilteringByReferenceDetail(null); setImageFilter(ImageFilterType.ALL); 
+        setReferenceImageOrder(new Map()); setRatingFilter(null);
+        await loadFilesFromDirectoryHandle(directoryHandle, false); 
+        startAutoRefresh(); 
       } else showAppNotification("Folder read permission denied/revoked. Stop & restart sync.", "error");
     } catch (e: any) { showAppNotification(`Refresh permission error: ${e.message}`, "error"); }
-  }, [directoryHandle, loadFilesFromDirectoryHandle, showAppNotification]);
+  }, [directoryHandle, loadFilesFromDirectoryHandle, showAppNotification, startAutoRefresh]);
 
-  const handleStopFolderSync = useCallback((confirm = true) => {
-    const doStop = () => { clearAllDataForNewLoad(); setDirectoryHandle(null); setIsFolderSyncActive(false); setSyncedFolderName(null); setIsLoadingDirectory(false); showAppNotification("Folder sync stopped.", 'success'); closeConfirmationModal(); };
-    if (confirm && (images.length || references.length)) openConfirmationModal("Confirm Stop Sync", <><p>Stopping sync clears files from '<strong>{syncedFolderName}</strong>' ({images.length}) & refs ({references.length}).</p><p className="mt-2">Stop syncing?</p></>, doStop);
-    else doStop();
-  }, [images, references, syncedFolderName, clearAllDataForNewLoad, showAppNotification, openConfirmationModal, closeConfirmationModal]);
+  useEffect(() => {
+    return () => {
+      stopAutoRefresh();
+    };
+  }, [stopAutoRefresh]);
+
 
   const performActualUnload = useCallback(() => {
     const nameUnloaded = currentLoadedSessionName || "current data";
@@ -571,7 +708,7 @@ const App: React.FC = () => {
     setImages(prevImgs =>
       prevImgs.map(img =>
         selectedImageIds.has(img.id)
-          ? { ...img, rating: newRating === 0 ? undefined : newRating } // Do not update lastModified here
+          ? { ...img, rating: newRating === 0 ? undefined : newRating } 
           : img
       )
     );
@@ -606,8 +743,8 @@ const App: React.FC = () => {
   }, [selectedImageIds, imagesByIdMap]);
   
   const showSelectionActionsBar = useMemo(() => {
-    return selectedImageIds.size > 0 && !isReorderEnabled && !isFolderSyncActive;
-  }, [selectedImageIds, isReorderEnabled, isFolderSyncActive]);
+    return selectedImageIds.size > 0 && !isReorderEnabled && !isFolderSyncActiveRef.current;
+  }, [selectedImageIds, isReorderEnabled]);
 
   const handleImageCardSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setImageCardSize(Number(event.target.value));
@@ -622,7 +759,6 @@ const App: React.FC = () => {
     setRatingFilter(null);
     setImageSortOrder(SortOrder.DESC);
     setImageCardSize(DEFAULT_IMAGE_CARD_SIZE);
-    // Do not clear filteringByReferenceDetail here, as that's a separate contextual filter
   }, []);
 
   const activeFilterCount = useMemo(() => {
@@ -630,11 +766,9 @@ const App: React.FC = () => {
     if (imageFilter !== ImageFilterType.ALL && isReferencingModeActive) count++;
     if (ratingFilter !== null) count++;
     if (imageSortOrder !== SortOrder.DESC) count++;
-    // Card size is no longer counted as a filter in the badge
     return count;
   }, [imageFilter, ratingFilter, imageSortOrder, isReferencingModeActive]);
 
-  // Keyboard shortcuts for rating and navigation
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isConfirmationModalOpen || isShareModalOpen) return;
@@ -644,7 +778,6 @@ const App: React.FC = () => {
         return;
       }
 
-      // Rating shortcuts (0-5)
       if (showSelectionActionsBar) {
         const key = event.key;
         if (key >= '0' && key <= '5') {
@@ -654,8 +787,7 @@ const App: React.FC = () => {
         }
       }
 
-      // Arrow key navigation (Left/Right)
-      if (selectedImageIds.size === 1 && !isReorderEnabled && !isFolderSyncActive) {
+      if (selectedImageIds.size === 1 && !isReorderEnabled && !isFolderSyncActiveRef.current) {
         const currentImageId = Array.from(selectedImageIds)[0];
         const currentIndex = filteredAndSortedImages.findIndex(img => img.id === currentImageId);
 
@@ -693,13 +825,11 @@ const App: React.FC = () => {
       isShareModalOpen,
       selectedImageIds,
       isReorderEnabled,
-      isFolderSyncActive,
       filteredAndSortedImages, 
   ]);
 
-  // Effect to scroll to selected image on keyboard navigation
   useEffect(() => {
-    if (selectedImageIds.size === 1 && !isReorderEnabled && !isFolderSyncActive) {
+    if (selectedImageIds.size === 1 && !isReorderEnabled && !isFolderSyncActiveRef.current) {
       const selectedImageId = Array.from(selectedImageIds)[0];
       if (selectedImageId) {
         requestAnimationFrame(() => {
@@ -714,7 +844,7 @@ const App: React.FC = () => {
         });
       }
     }
-  }, [selectedImageIds, filteredAndSortedImages, isReorderEnabled, isFolderSyncActive]);
+  }, [selectedImageIds, filteredAndSortedImages, isReorderEnabled]);
 
 
   useEffect(() => { const cb = (e: MouseEvent) => { if (sessionLoadContainerRef.current && !sessionLoadContainerRef.current.contains(e.target as Node)) setIsSessionListVisible(false); }; if (isSessionListVisible) document.addEventListener('mousedown', cb); else document.removeEventListener('mousedown', cb); return () => document.removeEventListener('mousedown', cb); }, [isSessionListVisible]);
@@ -742,14 +872,14 @@ const App: React.FC = () => {
   const handleOpenShareModal = () => { setIsShareModalOpen(true); setIsActionsMenuOpen(false); };
   const handleCloseShareModal = () => setIsShareModalOpen(false);
   const handleConfirmShare = async (name: string, type: 'copyLink' | 'sendToRetouch', assignee?: string, step?: string) => {
-    const shareName = name.trim() || (isFolderSyncActive && syncedFolderName ? `Folder: ${syncedFolderName}` : "Untitled Session");
+    const shareName = name.trim() || (isFolderSyncActiveRef.current && syncedFolderName ? `Folder: ${syncedFolderName}` : "Untitled Session");
     if (type === 'copyLink') try { await navigator.clipboard.writeText(window.location.href); showAppNotification(`Link copied for: ${shareName}!`); } catch (err) { console.error('Copy URL fail:', err); showAppNotification('Failed to copy URL.', 'error'); }
     else if (type === 'sendToRetouch') { if (step) { console.log(`Sending "${shareName}" to ${assignee || 'Unassigned'} for retouch (Step: ${step}).`); showAppNotification(`Session "${shareName}" sent for ${step}${assignee ? ` to ${assignee}` : ''}.`); } else showAppNotification('Step required for retouch.', 'error'); }
     handleCloseShareModal();
   };
   const showReferencesPanelFull = isReferencingModeActive && !isReferencesPanelCollapsed;
 
-  if (showDropZoneOverlay && !isFolderSyncActive) return <div className="fixed inset-0 bg-blue-600 bg-opacity-90 flex items-center justify-center z-[9999] p-4"><h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white animate-pulse text-center">{currentDropPhrase}</h1></div>;
+  if (showDropZoneOverlay && !isFolderSyncActiveRef.current) return <div className="fixed inset-0 bg-blue-600 bg-opacity-90 flex items-center justify-center z-[9999] p-4"><h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white animate-pulse text-center">{currentDropPhrase}</h1></div>;
 
   return (
     <div className="min-h-screen flex flex-col text-gray-800 bg-white">
@@ -759,8 +889,8 @@ const App: React.FC = () => {
           <div className="flex items-center space-x-3">
              {!isFolderSyncActive && browserSupportsFileSystemAccessAPI && (<button onClick={handleStartFolderSync} className="flex items-center bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-opacity-50 text-sm" title="Synchronize local folder (experimental)"><DocumentDuplicateIcon className="w-4 h-4 mr-2" />Sync Folder</button>)}
             {isFolderSyncActive && (<>
-                <button onClick={handleRefreshSyncedFolder} disabled={isLoadingDirectory} className="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-sm disabled:bg-blue-300" title="Refresh synced folder"><ArrowPathIcon className={`w-4 h-4 mr-2 ${isLoadingDirectory ? 'animate-spin' : ''}`} />Refresh</button>
-                <button onClick={() => handleStopFolderSync()} disabled={isLoadingDirectory} className="flex items-center bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 text-sm disabled:bg-red-300" title="Stop folder sync"><StopCircleIcon className="w-4 h-4 mr-2" />Stop Sync</button>
+                <button onClick={handleRefreshSyncedFolder} disabled={isLoadingDirectory} className="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-sm disabled:bg-blue-300" title="Refresh synced folder"><ArrowPathIcon className={`w-4 h-4 mr-2 ${isLoadingDirectory && !autoSyncIntervalIdRef.current ? 'animate-spin' : ''}`} />Refresh</button>
+                <button onClick={() => handleStopFolderSync()} disabled={isLoadingDirectory && autoSyncIntervalIdRef.current !== null} className="flex items-center bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 text-sm disabled:bg-red-300" title="Stop folder sync"><StopCircleIcon className="w-4 h-4 mr-2" />Stop Sync</button>
             </>)}
             <div className="relative">
                 <button id="actions-button" ref={actionsButtonRef} onClick={() => setIsActionsMenuOpen(o => !o)} className="flex items-center bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 px-4 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-opacity-50 text-sm" aria-haspopup="true" aria-expanded={isActionsMenuOpen} aria-controls="actions-menu" title="Open actions menu">Actions <ChevronDownIcon className={`w-4 h-4 ml-2 transition-transform duration-200 ${isActionsMenuOpen ? 'rotate-180' : ''}`} /></button>
@@ -778,8 +908,7 @@ const App: React.FC = () => {
       <main className="flex-grow flex flex-col md:flex-row p-4 gap-4">
         <section className={`flex flex-col transition-all duration-300 ease-in-out ${showReferencesPanelFull ? 'md:w-2/3' : 'w-full'}`}>
           
-          <div ref={imageGalleryScrollContainerRef} className="flex-grow overflow-y-auto min-h-0"> {/* Scrollable area for gallery header and images */}
-            {/* File Gallery Header - Now part of the scrollable content */}
+          <div ref={imageGalleryScrollContainerRef} className="flex-grow overflow-y-auto min-h-0"> 
             <div className="bg-white border-b border-gray-200 pb-3"> 
               <div className="flex justify-between items-center mb-1 pt-2">
                 <h2 className="text-xl font-semibold text-gray-800">File Gallery</h2>
@@ -877,14 +1006,18 @@ const App: React.FC = () => {
                             </span>
                         </h3>
                         {isReorderEnabled && (<p className="text-xs text-blue-600">Drag & drop to reorder files for this reference.</p>)}
-                        {isFolderSyncActive && (<p className="text-xs text-teal-600">Displaying from: <strong>{syncedFolderName}</strong>.{isLoadingDirectory ? ' Refreshing...' : ' Click "Refresh" for external changes.'}</p>)}
+                        {isFolderSyncActive && (
+                          <p className="text-xs text-teal-600">
+                            {isLoadingDirectory ? `Processing '${syncedFolderName}'...` : 
+                              (autoSyncIntervalIdRef.current ? `Auto-sync active for '${syncedFolderName}'. Polling every ${AUTO_SYNC_INTERVAL/1000}s.` : 
+                                (syncedFolderName ? `Folder '${syncedFolderName}' loaded. Manual refresh available.` : 'Folder sync stopped.'))}
+                          </p>
+                        )}
                     </div>
                 )}
               </div>
             </div>
-            {/* End File Gallery Header */}
           
-            {/* Image Grid Content */}
             {isLoadingDirectory && images.length === 0 && (<p className="text-center text-gray-500 py-8 flex-grow flex items-center justify-center">Loading files from '{syncedFolderName}'...</p>)}
             {!isLoadingDirectory && groupedImagesForDisplay.length === 0 ? (<p className="text-center text-gray-500 py-8 flex-grow flex items-center justify-center">{images.length ? (filteringByReferenceDetail ? `No files for ref: "${filteringByReferenceDetail.text}".` : (isReferencingModeActive && !isReferencesPanelCollapsed && imageFilter !== ImageFilterType.ALL) ? 'No files match filter.' : (ratingFilter !== null ? `No files match ${ratingFilter === 0 ? 'Not Rated' : `${ratingFilter}-star`} filter.` : 'No files for current view.')) : (isFolderSyncActive ? `No images in '${syncedFolderName}' or empty. Add files & refresh.` : 'No files. Upload or drag & drop.')}</p>)
             : (<div className={`${isLoadingDirectory ? 'opacity-50' : ''} pt-4`}>
@@ -911,7 +1044,7 @@ const App: React.FC = () => {
                     {!group.isUnassociatedGroup && !filteringByReferenceDetail && idx < groupedImagesForDisplay.length - 1 && (<hr className="my-6 border-t-2 border-gray-200" />)}
                   </div>))}
               </div>)}
-          </div> {/* End scrollable area */}
+          </div> 
           
           {showSelectionActionsBar && (
             <div className="sticky bottom-0 bg-slate-800 text-white p-2 md:p-3 shadow-md-top z-10 flex items-center justify-between space-x-2 md:space-x-4 border-t border-slate-700 shrink-0">
