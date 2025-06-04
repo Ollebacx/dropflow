@@ -1,7 +1,7 @@
 
 import React, { useState, DragEvent } from 'react';
 import { ImageFile, Reference } from '../types';
-import { CheckCircleIcon, LinkIcon, XCircleIcon } from '../constants';
+import { CheckCircleIcon, LinkIcon, XCircleIcon, DocumentIcon } from '../constants';
 
 interface ImageGridItemProps {
   image: ImageFile;
@@ -102,6 +102,9 @@ const ImageGridItem: React.FC<ImageGridItemProps> = React.memo(({
     hoverEffectClasses = ''; 
   }
 
+  const canDisplayPreview = image.dataUrl && image.type.startsWith('image/');
+  const fileExtension = image.name.split('.').pop()?.toUpperCase() || 'FILE';
+
 
   return (
     <div
@@ -117,10 +120,19 @@ const ImageGridItem: React.FC<ImageGridItemProps> = React.memo(({
       title={isDraggable ? `Drag to reorder: ${image.name}` : `Click to select/deselect. Name: ${image.name}. Last modified: ${new Date(image.lastModified).toLocaleDateString()}`}
       role={isDraggable ? "listitem" : "button"}
       aria-pressed={!isDraggable && isSelected}
-      aria-label={`Image: ${image.name}${associatedReference ? `, Associated with: ${associatedReference.text}` : ''}`}
+      aria-label={`File: ${image.name}${associatedReference ? `, Associated with: ${associatedReference.text}` : ''}`}
     >
-      <div className="flex-grow relative overflow-hidden rounded-t-lg"> {/* Ensure image respects rounded corners */}
-        <img src={image.dataUrl} alt={image.name} className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
+      <div className="flex-grow relative overflow-hidden rounded-t-lg bg-gray-50"> {/* Ensure image respects rounded corners and provide a default bg */}
+        {canDisplayPreview ? (
+            <img src={image.dataUrl} alt={image.name} className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
+        ) : (
+            <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-center p-2 text-gray-500 pointer-events-none">
+                <DocumentIcon className="w-16 h-16 mb-2 opacity-70 flex-shrink-0" />
+                <p className="text-sm font-semibold text-gray-600 text-center break-all leading-tight" title={image.name}>
+                    {fileExtension}
+                </p>
+            </div>
+        )}
         {isSelected && !isDraggable && (
           <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1 z-10" aria-hidden="true">
             <CheckCircleIcon className="w-5 h-5" />
@@ -128,7 +140,7 @@ const ImageGridItem: React.FC<ImageGridItemProps> = React.memo(({
         )}
       </div>
       
-      <div className="p-3 border-t border-gray-100 bg-white rounded-b-lg"> {/* Explicit white bg for bottom part if needed, or keep transparent */}
+      <div className="p-3 border-t border-gray-100 bg-white rounded-b-lg">
         <p className="text-sm font-medium text-gray-800 truncate" title={image.name}>{image.name}</p>
         <p className="text-xs text-gray-500">{new Date(image.lastModified).toLocaleDateString()}</p>
         {associatedReference && (
@@ -141,8 +153,8 @@ const ImageGridItem: React.FC<ImageGridItemProps> = React.memo(({
             <button 
               onClick={handleUnassociateClick} 
               className="ml-1 p-0.5 rounded-full hover:bg-green-100 text-green-600 hover:text-green-800 focus:outline-none focus:ring-1 focus:ring-green-400"
-              title="Unassociate this image"
-              aria-label={`Unassociate image ${image.name} from reference ${associatedReference.text}`}
+              title="Unassociate this file"
+              aria-label={`Unassociate file ${image.name} from reference ${associatedReference.text}`}
             >
               <XCircleIcon className="w-4 h-4"/>
             </button>

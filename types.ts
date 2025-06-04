@@ -4,7 +4,7 @@ export interface ImageFile {
   type: string;
   size: number;
   lastModified: number; // timestamp
-  dataUrl: string; // for preview
+  dataUrl?: string; // for preview, now optional
   fileObject: File; // original file object
   associatedReferenceId?: string | null;
 }
