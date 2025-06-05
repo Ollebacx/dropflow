@@ -99,7 +99,7 @@ export const IMAGE_FILTER_TYPE_DISPLAY_NAMES: Record<ImageFilterType, string> = 
 };
 
 const DEFAULT_IMAGE_CARD_SIZE = 210;
-const AUTO_REFRESH_INTERVAL_MS = 30000; // 30 seconds
+const AUTO_REFRESH_INTERVAL_MS = 1000; // 30 seconds
 
 async function getAllFileObjectsFromDirectory(dirHandle: FileSystemDirectoryHandle): Promise<File[]> {
   const filesArray: File[] = [];
@@ -583,7 +583,7 @@ const App: React.FC = () => {
     initialFileNamesFromThisFolderForRemovalCheck: Set<string>,
     isFromExplicitAction: boolean // To control notifications (e.g., silent auto-refresh if no changes)
   ) => {
-    setIsLoadingDirectory(true);
+    setIsLoadingDirectory(isFromExplicitAction);
     let filesAdded = 0, filesUpdated = 0, filesRemoved = 0, filesConflictResolved = 0;
 
     try {
@@ -630,7 +630,7 @@ const App: React.FC = () => {
             nextImages.push(remainingInMap);
           }
         }
-        
+
         // Determine removed files from *this* sync operation
         const removedFileIdsThisSync = new Set<string>();
         currentImagesInState.forEach(img => {
@@ -710,7 +710,7 @@ const App: React.FC = () => {
             .map(img => img.name)
       );
 
-      await loadFilesFromDirectoryHandle(handle, currentImageNamesFromThisFolder, true);
+      await loadFilesFromDirectoryHandle(handle, currentImageNamesFromThisFolder, false);
       startAutoRefresh(); 
     };
 
@@ -1064,8 +1064,8 @@ const App: React.FC = () => {
           <div className="flex items-center space-x-3">
              {!isFolderSyncActive && browserSupportsFileSystemAccessAPI && (<button onClick={handleStartFolderSync} className="flex items-center bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-opacity-50 text-sm" title="Synchronize local folder (experimental)"><DocumentDuplicateIcon className="w-4 h-4 mr-2" />Sync Folder</button>)}
             {isFolderSyncActive && (<>
-                <button onClick={handleRefreshSyncedFolder} disabled={isLoadingDirectory} className="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-sm disabled:bg-blue-300" title="Refresh synced folder"><ArrowPathIcon className={`w-4 h-4 mr-2 ${isLoadingDirectory ? 'animate-spin' : ''}`} />Refresh</button>
-                <button onClick={() => handleStopFolderSync()} disabled={isLoadingDirectory} className="flex items-center bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 text-sm disabled:bg-red-300" title="Stop folder sync"><StopCircleIcon className="w-4 h-4 mr-2" />Stop Sync</button>
+                <button onClick={handleRefreshSyncedFolder} className="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 text-sm disabled:bg-blue-300" title="Refresh synced folder"><ArrowPathIcon className={`w-4 h-4 mr-2`} />Refresh</button>
+                <button onClick={() => handleStopFolderSync()} className="flex items-center bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-3 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 text-sm disabled:bg-red-300" title="Stop folder sync"><StopCircleIcon className="w-4 h-4 mr-2" />Stop Sync</button>
             </>)}
             <div className="relative">
                 <button id="actions-button" ref={actionsButtonRef} onClick={() => setIsActionsMenuOpen(o => !o)} className="flex items-center bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 px-4 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-opacity-50 text-sm" aria-haspopup="true" aria-expanded={isActionsMenuOpen} aria-controls="actions-menu" title="Open actions menu">Actions <ChevronDownIcon className={`w-4 h-4 ml-2 transition-transform duration-200 ${isActionsMenuOpen ? 'rotate-180' : ''}`} /></button>
@@ -1102,7 +1102,7 @@ const App: React.FC = () => {
                             onChange={handleImageCardSizeChange}
                             className="w-24 h-2 bg-gray-200 appearance-none cursor-pointer accent-slate-600 disabled:opacity-50"
                             title={`Adjust preview card size: ${imageCardSize}px`}
-                            disabled={isLoadingDirectory}
+                            // disabled={isLoadingDirectory}
                           />
                         </div>
                         <div className="relative">
@@ -1114,7 +1114,7 @@ const App: React.FC = () => {
                               aria-haspopup="true"
                               aria-expanded={isFilterPanelOpen}
                               aria-controls="filter-sort-panel"
-                              disabled={isLoadingDirectory}
+                              // disabled={isLoadingDirectory}
                           >
                               <AdjustmentsHorizontalIcon className="w-4 h-4 mr-2" />
                               Filters
@@ -1138,7 +1138,7 @@ const App: React.FC = () => {
                                       onResetFilters={resetAllGalleryFilters}
                                       imageFilterTypeDisplayNames={IMAGE_FILTER_TYPE_DISPLAY_NAMES}
                                       sortOrderEnum={SortOrder}
-                                      isLoading={isLoadingDirectory}
+                                      // isLoading={isLoadingDirectory}
                                       isReorderActive={isReorderEnabled}
                                       isReferencingModeActive={isReferencingModeActive}
                                       imageFilterEnum={ImageFilterType}
@@ -1170,7 +1170,7 @@ const App: React.FC = () => {
                                     }}
                                     className="ml-2 p-0.5 hover:bg-red-100 text-red-600 hover:text-red-700 focus:outline-none focus:ring-1 focus:ring-red-300 disabled:opacity-50"
                                     title={`Clear filter for '${filteringByReferenceDetail.text}'`}
-                                    disabled={isLoadingDirectory}
+                                    // disabled={isLoadingDirectory}
                                     aria-label={`Clear filter for reference ${filteringByReferenceDetail.text}`}
                                 >
                                     <XCircleIcon className="w-4 h-4" />
@@ -1192,7 +1192,7 @@ const App: React.FC = () => {
           
             {isLoadingDirectory && images.length === 0 && (<p className="text-center text-gray-500 py-8 flex-grow flex items-center justify-center">Loading files from '{syncedFolderName}'...</p>)}
             {!isLoadingDirectory && groupedImagesForDisplay.length === 0 ? (<p className="text-center text-gray-500 py-8 flex-grow flex items-center justify-center">{images.length ? (filteringByReferenceDetail ? `No files for ref: "${filteringByReferenceDetail.text}".` : (isReferencingModeActive && !isReferencesPanelCollapsed && imageFilter !== ImageFilterType.ALL) ? 'No files match filter.' : (ratingFilter !== null ? `No files match ${ratingFilter === 0 ? 'Not Rated' : `${ratingFilter}-star`} filter.` : 'No files for current view.')) : (isFolderSyncActive ? `No images in '${syncedFolderName}' or empty. Add files & refresh.` : 'No files. Upload or drag & drop.')}</p>)
-            : (<div className={`${isLoadingDirectory ? 'opacity-50' : ''} pt-4`}>
+            : (<div className="pt-4">
                 {groupedImagesForDisplay.map((group, idx) => (<div key={group.key} className={`${idx > 0 && group.isUnassociatedGroup ? "mt-6 pt-2" : ""} ${idx > 0 && !group.isUnassociatedGroup && group.reference && !groupedImagesForDisplay[idx-1].isUnassociatedGroup ? "" : ""}`}>
                     {group.reference && !filteringByReferenceDetail && (<h4 className="text-md font-semibold text-gray-700 mb-3 bg-gray-50 py-1.5 px-2">Reference: {group.reference.text} ({group.images.length})</h4>)}
                     <div className="flex flex-wrap justify-start gap-4 py-2">
